@@ -1,0 +1,7 @@
+c7636c1a76c12c03af14769eb28ac364ed7a09ed311ea44db655472a79819a02  legacy/vaio-fe16-dev-setup/README.md
+3ed3a348882a75353e5a21788cecf520c21892ae29023c994cc47a06481774df  legacy/vaio-fe16-dev-setup/bin/dev-build
+fe5180f3d64bded6616596d401b4fb629761b9f3a9c9f6af9fb55e738d466aed  legacy/vaio-fe16-dev-setup/bin/dev-doctor
+a7a9eb587c7abf0d802d905fdfb0561102b5a939ec7c029db976c120c634263c  legacy/vaio-fe16-dev-setup/bin/dev-emulator
+e1952c94099a0a4b76c69cdaa6a402d95e185dfd349ef15cdc4754ae19645ce9  legacy/vaio-fe16-dev-setup/bin/dev-run
+503c9f220a26cf8a591a365db096cc695479bf431eeb68f3f6af55c0d37f83e4  legacy/vaio-fe16-dev-setup/compose-limits.example.yaml
+cc1fd837379699b099a9e61c080489b551b7a7e89921e07923e83ca55b5e5620  legacy/vaio-fe16-dev-setup/setup.sh

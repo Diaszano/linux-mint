@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Inicia processo e filhos em scope systemd com limites cgroup v2.
+set -Eeuo pipefail
+if (($# < 2)); then
+  echo 'Uso: dev-run {build|emulator|heavy} COMANDO [ARGUMENTOS...]' >&2
+  exit 2
+fi
+profile="$1"; shift
+case "$profile" in
+  build)    cpu=800; high=7G; max=9G; tasks=1024 ;;
+  emulator) cpu=400; high=5G; max=6G; tasks=512 ;;
+  heavy)    cpu=600; high=6G; max=8G; tasks=768 ;;
+  *) echo "Perfil desconhecido: $profile" >&2; exit 2 ;;
+esac
+
+if [[ "${DEV_LIMITS_DISABLED:-0}" == "1" ]]; then
+  echo '[dev-run] ATENCAO: sem limites cgroup; apenas prioridade reduzida.' >&2
+  exec nice -n 5 ionice -c 2 -n 4 "$@"
+fi
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  echo '[dev-run] Erro: sessao systemd de usuario indisponivel.' >&2
+  echo '[dev-run] Use um terminal de sessao grafica normal; para executar sem isolamento: DEV_LIMITS_DISABLED=1 dev-run ...' >&2
+  exit 1
+fi
+# Caso a criacao do scope falhe, NAO executa o comando sem limites silenciosamente.
+exec systemd-run --user --scope --quiet --collect \
+  -p "CPUQuota=${cpu}%" -p "MemoryHigh=$high" -p "MemoryMax=$max" \
+  -p "TasksMax=$tasks" \
+  -- nice -n 5 ionice -c 2 -n 4 "$@"

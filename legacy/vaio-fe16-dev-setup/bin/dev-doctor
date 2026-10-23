@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Somente diagnostico, sem sudo, sem alteracoes.
+set -u
+line() { printf '\n=== %s ===\n' "$*"; }
+line 'Sistema e CPU'
+grep -E '^(PRETTY_NAME|UBUNTU_CODENAME)=' /etc/os-release || true
+uname -r
+awk -F: '/model name/{sub(/^[[:space:]]+/,"",$2); print "CPU: " $2; exit}' /proc/cpuinfo
+printf 'Threads: %s\n' "$(nproc)"
+line 'Memoria e swap'
+free -h
+swapon --show || true
+command -v zramctl >/dev/null && zramctl || true
+printf 'swappiness: '; cat /proc/sys/vm/swappiness
+line 'CPU / energia'
+for path in /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver \
+  /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; do
+  [[ -r "$path" ]] && printf '%s: %s\n' "$(basename "$path")" "$(cat "$path")"
+done
+command -v powerprofilesctl >/dev/null && powerprofilesctl get || true
+line 'AMD-V / KVM'
+if grep -Eq '(^|[[:space:]])svm([[:space:]]|$)' /proc/cpuinfo; then echo 'SVM visivel: sim'; else echo 'SVM visivel: nao (BIOS?)'; fi
+if [[ -e /dev/kvm ]]; then
+  ls -l /dev/kvm
+  if [[ -r /dev/kvm && -w /dev/kvm ]]; then echo 'Usuario pode usar KVM: sim'; else echo 'Usuario pode usar KVM: nao (sair/entrar na sessao?)'; fi
+else
+  echo '/dev/kvm ausente'
+fi
+line 'Grafico'
+if command -v glxinfo >/dev/null; then glxinfo -B 2>/dev/null | grep -E 'OpenGL (vendor|renderer|core profile version)' || true; fi
+line 'Ferramentas'
+for tool in mise docker gradle adb emulator; do
+  if command -v "$tool" >/dev/null; then printf '%s: %s\n' "$tool" "$(command -v "$tool")"; else echo "$tool: nao encontrado no PATH"; fi
+done
+[[ -x "$HOME/Android/Sdk/emulator/emulator" ]] && echo "Android Emulator SDK: $HOME/Android/Sdk/emulator/emulator"
+line 'Cgroup v2'
+[[ -e /sys/fs/cgroup/cgroup.controllers ]] && echo 'cgroup v2 detectado' || echo 'cgroup v2 indisponivel'
+if systemctl --user show-environment >/dev/null 2>&1; then echo 'systemd de usuario: acessivel'; else echo 'systemd de usuario: inacessivel'; fi
+line 'Armazenamento'
+lsblk -o NAME,TRAN,TYPE,SIZE,ROTA,MOUNTPOINTS | head -n 22
+line 'Protecao contra OOM'
+for service in earlyoom systemd-oomd zramswap; do
+  printf '%s: ' "$service"
+  systemctl is-active "$service" 2>/dev/null || true
+done

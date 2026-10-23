@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+emulator="$sdk/emulator/emulator"
+if [[ ! -x "$emulator" ]]; then
+  emulator="$(command -v emulator || true)"
+fi
+if [[ -z "$emulator" ]] || [[ ! -x "$emulator" ]]; then
+  echo '[dev-emulator] Emulador nao encontrado. Instale Android SDK Emulator pelo Android Studio.' >&2
+  echo "[dev-emulator] SDK esperado em: $sdk" >&2
+  exit 1
+fi
+if [[ "${1:-}" == "--list" ]]; then
+  exec "$emulator" -list-avds
+fi
+if (($# == 0)); then
+  echo 'Uso: dev-emulator --list | dev-emulator NOME_AVD [ARGUMENTOS_EXTRAS...]' >&2
+  exit 2
+fi
+name="$1"; shift
+if [[ ! -r /dev/kvm ]] || [[ ! -w /dev/kvm ]]; then
+  echo '[dev-emulator] Sem permissao em /dev/kvm: confirme SVM no BIOS e reabra a sessao apos entrar no grupo kvm.' >&2
+  exit 1
+fi
+exec "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/dev-run" emulator \
+  "$emulator" -avd "$name" -memory 3072 -cores 4 -gpu auto -no-boot-anim "$@"
