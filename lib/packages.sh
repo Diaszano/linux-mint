@@ -40,6 +40,14 @@ _apt_installed() {
   return 1
 }
 
+_apt_memory_manager() {
+  case "${1%%:*}" in
+    *zram* | *zswap* | systemd-swap | swapspace | dphys-swapfile) printf 'zram\n' ;;
+    *oom* | nohang | low-memory-monitor) printf 'earlyoom\n' ;;
+    *) printf 'none\n' ;;
+  esac
+}
+
 _apt_barrier() {
   local module=$1 package status evidence device type size priority extra
   preflight_install_inventory || {
@@ -49,8 +57,8 @@ _apt_barrier() {
   evidence=${PREFLIGHT_SERVICES,,}
   while IFS=$'\t' read -r package status _; do
     [[ $status == *' ok installed' ]] || continue
-    case "$module:${package%%:*}" in
-      zram:*zram* | zram:zswap* | zram:systemd-swap | zram:swapspace | zram:dphys-swapfile | earlyoom:earlyoom | earlyoom:*oomd* | earlyoom:nohang | earlyoom:low-memory-monitor)
+    case "$module:$(_apt_memory_manager "$package")" in
+      zram:zram | earlyoom:earlyoom)
         printf 'Erro: gerenciador existente impede %s: %s\n' "$module" "$package" >&2
         return 1
         ;;
@@ -121,14 +129,15 @@ _apt_signature() {
 apt_plan() {
   local module=${1:-} package line name
   APT_PLAN_TOKEN=''
+  APT_PLAN_CONFIG=${APT_CONFIG:-}
   APT_PLAN_MISSING=()
   [[ $module =~ ^[a-z][a-z0-9_-]{0,63}$ && $# -gt 1 ]] || return 1
   shift
   for package in "$@"; do
     [[ $package =~ ^[a-z0-9][a-z0-9+.-]*$ ]] || return 1
-    case "$module:$package" in
-      zram:zram-tools | earlyoom:earlyoom) ;;
-      *:*zram* | *:*oom* | *:nohang | *:low-memory-monitor)
+    case "$module:$package:$(_apt_memory_manager "$package")" in
+      zram:zram-tools:zram | earlyoom:earlyoom:earlyoom | *:*:none) ;;
+      *)
         printf 'Erro: gerenciador fora do módulo selecionado.\n' >&2
         return 1
         ;;
@@ -140,7 +149,7 @@ apt_plan() {
   done
   APT_PLAN_TRANSACTION=''
   if ((${#APT_PLAN_MISSING[@]})); then
-    APT_PLAN_TRANSACTION=$(LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
+    APT_PLAN_TRANSACTION=$(APT_CONFIG="$APT_PLAN_CONFIG" LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
       printf 'Erro: simulação APT falhou; verifique os índices e a conectividade.\n%s\n' "$APT_PLAN_TRANSACTION" >&2
       return 1
     }
@@ -162,9 +171,9 @@ apt_plan() {
               return 1
               ;;
           esac
-          case "$module:${name%%:*}" in
-            zram:zram-tools | earlyoom:earlyoom) ;;
-            *:*zram* | *:*oom* | *:nohang | *:low-memory-monitor)
+          case "$module:${name%%:*}:$(_apt_memory_manager "$name")" in
+            zram:zram-tools:zram | earlyoom:earlyoom:earlyoom | *:*:none) ;;
+            *)
               printf 'Erro: dependência inclui gerenciador não selecionado.\n' >&2
               return 1
               ;;
@@ -174,7 +183,7 @@ apt_plan() {
     done <<<"$APT_PLAN_TRANSACTION"
     printf '%s\n' "$APT_PLAN_TRANSACTION"
   fi
-  APT_PLAN_REQUEST=$(_apt_signature "$module" "$@")
+  APT_PLAN_REQUEST=$(_apt_signature "$module" "$@" "$APT_PLAN_CONFIG")
   APT_PLAN_INVENTORY=$(_apt_signature "$PREFLIGHT_PACKAGES" "$PREFLIGHT_CONFLICT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM")
   APT_PLAN_TOKEN=$(_apt_signature "$APT_PLAN_REQUEST" "$APT_PLAN_INVENTORY" "$APT_PLAN_TRANSACTION")
   printf 'missing=%s\nplan_token=%s\n' "${APT_PLAN_MISSING[*]:-none}" "$APT_PLAN_TOKEN"
@@ -183,8 +192,8 @@ apt_plan() {
 _apt_audit() {
   local run=$1 module=$2 phase=$3 result=$4
   {
-    printf '[packages]\n%s\n[services]\n%s\n[swap]\n%s\n[zram]\n%s\n[simulation]\n%s\n' \
-      "$PREFLIGHT_PACKAGES" "$PREFLIGHT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM" "$APT_PLAN_TRANSACTION"
+    printf '[packages_state]\n%s\n[packages]\n%s\n[services]\n%s\n[swap]\n%s\n[zram]\n%s\n[simulation]\n%s\n' \
+      "$PREFLIGHT_PACKAGES_STATE" "$PREFLIGHT_PACKAGES" "$PREFLIGHT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM" "$APT_PLAN_TRANSACTION"
   } | python3 -c '
 import importlib.util, json, os, sys
 spec = importlib.util.spec_from_file_location("manifest", sys.argv[1] + "/manifest.py")
@@ -217,14 +226,14 @@ apt_apply() {
     return 1
   }
   shift 4
-  [[ $(_apt_signature "$module" "$@") == "$APT_PLAN_REQUEST" ]] || return 1
+  [[ $(_apt_signature "$module" "$@" "${APT_CONFIG:-}") == "$APT_PLAN_REQUEST" ]] || return 1
   _apt_barrier "$module" "$@" || return 1
   [[ $(_apt_signature "$PREFLIGHT_PACKAGES" "$PREFLIGHT_CONFLICT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM") == "$APT_PLAN_INVENTORY" ]] || {
     printf 'Erro: estado mudou após a prévia; simule e confirme novamente.\n' >&2
     return 1
   }
   ((${#APT_PLAN_MISSING[@]})) || return 0
-  simulation=$(LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
+  simulation=$(APT_CONFIG="$APT_PLAN_CONFIG" LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
     printf 'Erro: nova simulação APT falhou; nenhuma instalação iniciada.\n' >&2
     return 1
   }
@@ -237,7 +246,7 @@ apt_apply() {
   # Recheck after durable auditing, immediately before maintainer scripts can run.
   _apt_barrier "$module" "$@" || return 1
   [[ $(_apt_signature "$PREFLIGHT_PACKAGES" "$PREFLIGHT_CONFLICT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM") == "$APT_PLAN_INVENTORY" ]] || return 1
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get --yes --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" || result=$?
+  sudo env "APT_CONFIG=$APT_PLAN_CONFIG" DEBIAN_FRONTEND=noninteractive apt-get --yes --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" || result=$?
   apt_result=$result
   if ! preflight_install_inventory audit; then
     printf 'Erro: inventário após APT indeterminado; consulte a auditoria anterior.\n' >&2
@@ -245,6 +254,10 @@ apt_apply() {
     result=1
   fi
   _apt_audit "$run" "$module" after "$apt_result" || return 1
+  if [[ $PREFLIGHT_PACKAGES_STATE != known ]]; then
+    APT_PLAN_TOKEN=''
+    return 1
+  fi
   for package in "${APT_PLAN_MISSING[@]}"; do
     installed=false
     if _apt_installed "$package"; then installed=true; fi

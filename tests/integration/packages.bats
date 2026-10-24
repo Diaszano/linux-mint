@@ -99,7 +99,7 @@ Dir::State::lists "$WORK/lists";
 Dir::Cache "$WORK/cache";
 APT::Sandbox::User "root";
 CONF
-  sudo --preserve-env=APT_CONFIG apt-get update >/dev/null
+  sudo env "APT_CONFIG=$APT_CONFIG" apt-get update >/dev/null
   touch "$WORK/fixture-created"
   run bash -c '
         set -euo pipefail
@@ -110,7 +110,7 @@ CONF
         sudo() {
             before="$XDG_STATE_HOME/vaio-fe16-dev-setup/runs/$run_id/packages-baseline-before.json"
             [[ -s $before ]] || return 98
-            command sudo --preserve-env=APT_CONFIG "$@"
+            command sudo "$@"
         }
         apt_apply "$run_id" baseline --confirmed "$APT_PLAN_TOKEN" vaio-task6-fixture
         python3 - "$XDG_STATE_HOME/vaio-fe16-dev-setup/runs/$run_id" <<"PY"
@@ -152,7 +152,7 @@ UNIT
             printf "Inst vaio-task6-fixture (1.0 fixture [all])\n"
         }
         sudo() {
-            if [[ ${1:-} == env && ${3:-} == apt-get ]]; then
+            if [[ ${1:-} == env && " $* " == *" apt-get "* ]]; then
                 touch "$WORK/unexpected-apt"
                 return 99
             fi

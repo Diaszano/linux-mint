@@ -127,11 +127,14 @@ preflight_conflicts() {
 # shortcut: opaque custom launchers hide their purpose; extend detection after reviewing their source.
 # shellcheck disable=SC2034
 preflight_install_inventory() {
-  local scope query listing unit _ metadata status version package content key value states evidence
+  local scope query listing unit _ metadata status version package content key value states evidence classification
   local -a args=() sorted_units=()
   local -A units=()
-  PREFLIGHT_PACKAGES=unknown PREFLIGHT_SWAPS=unknown PREFLIGHT_ZRAM=unknown PREFLIGHT_SERVICES=unknown PREFLIGHT_CONFLICT_SERVICES=unknown
-  PREFLIGHT_PACKAGES=$(dpkg-query -W -f='${binary:Package}\t${Status}\t${Version}\n' 2>/dev/null) || return 1
+  PREFLIGHT_PACKAGES=unknown PREFLIGHT_PACKAGES_STATE=unknown PREFLIGHT_SWAPS=unknown PREFLIGHT_ZRAM=unknown PREFLIGHT_SERVICES=unknown PREFLIGHT_CONFLICT_SERVICES=unknown
+  if ! PREFLIGHT_PACKAGES=$(dpkg-query -W -f='${binary:Package}\t${Status}\t${Version}\n' 2>/dev/null); then
+    PREFLIGHT_PACKAGES=unknown
+    return 1
+  fi
   [[ -n $PREFLIGHT_PACKAGES ]] || return 1
   while IFS=$'\t' read -r package status version; do
     [[ $package =~ ^[a-z0-9][a-z0-9+.:~-]*$ && -n $version ]] || return 1
@@ -140,6 +143,7 @@ preflight_install_inventory() {
       *) [[ ${1:-} == audit ]] || return 1 ;;
     esac
   done <<< "$PREFLIGHT_PACKAGES"
+  PREFLIGHT_PACKAGES_STATE=known
   PREFLIGHT_SWAPS=$(swapon --show --noheadings --raw --output NAME,TYPE,SIZE,PRIO 2>/dev/null) || return 1
   PREFLIGHT_ZRAM=$(zramctl --noheadings --raw --output NAME,DISKSIZE 2>/dev/null) || return 1
   PREFLIGHT_SERVICES=''
@@ -158,11 +162,10 @@ preflight_install_inventory() {
     mapfile -t sorted_units < <(printf '%s\n' "${!units[@]}" | LC_ALL=C sort)
     for unit in "${sorted_units[@]}"; do
       [[ -n $unit ]] || continue
+      content=''
       if [[ $unit == *@.service ]]; then
         content=$(systemctl "${args[@]}" cat "$unit" --no-pager 2>/dev/null) || return 1
         metadata=$'Id='"$unit"$'\nActiveState=template'
-        [[ ! ${content,,} =~ (zram|zswap) ]] || metadata+=$'\nManagerEvidence=zram'
-        [[ ! ${content,,} =~ (earlyoom|oomd|nohang|low-memory-monitor|out.of.memory|memory.pressure) ]] || metadata+=$'\nManagerEvidence=oom-manager'
       else
         metadata=$(systemctl "${args[@]}" show "$unit" --no-pager \
           -p Id -p Description -p ExecStart -p ExecStartPre -p ExecStartPost \
@@ -175,9 +178,10 @@ preflight_install_inventory() {
         continue
       fi
       evidence=''
-      [[ ! ${metadata,,} =~ (zram|zswap) ]] || evidence+=' zram'
-      [[ ! ${metadata,,} =~ /(swapon|swapoff)([[:space:];]|$) ]] || evidence+=' swap-policy'
-      [[ ! ${metadata,,} =~ (earlyoom|oomd|nohang|low-memory-monitor|oom[[:space:]_-]*(killer|manager)|out.of.memory|memory.pressure) ]] || evidence+=' oom-manager'
+      classification=${metadata,,}$'\n'${content,,}
+      [[ ! $classification =~ (zram|zswap) ]] || evidence+=' zram'
+      [[ ! $classification =~ /(swapon|swapoff)([[:space:];]|$) ]] || evidence+=' swap-policy'
+      [[ ! $classification =~ (earlyoom|oomd|nohang|low-memory-monitor|oom[[:space:]_-]*(killer|manager)|out.of.memory|memory.pressure) ]] || evidence+=' oom-manager'
       [[ ! ${unit,,} =~ (^|[._-])oom([._@-]|$) ]] || evidence+=' oom-manager'
       states=''
       while IFS='=' read -r key value; do

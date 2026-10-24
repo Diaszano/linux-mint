@@ -22,10 +22,12 @@ case "${0##*/}" in
         case "$1" in
             list-units|list-unit-files) cat "$FIXTURE/units" ;;
             show) [[ ! -e $FIXTURE/show-failed ]] || exit 1; cat "$FIXTURE/metadata" ;;
+            cat) cat "$FIXTURE/template" ;;
             *) exit 99 ;;
         esac ;;
     apt-get)
         printf '%s\n' "$*" >>"$PACKAGE_LOG"
+        printf '%s\n' "${APT_CONFIG-<unset>}" >>"$FIXTURE/apt-config.log"
         [[ ! -e $FIXTURE/offline ]] || exit 100
         if [[ " $* " == *' --simulate '* ]]; then
             if [[ -f $FIXTURE/simulation ]]; then cat "$FIXTURE/simulation"; else printf 'Inst hello (2.10 Ubuntu:24.04/noble [amd64])\n'; fi
@@ -33,8 +35,9 @@ case "${0##*/}" in
             [[ -f $FIXTURE/before-observed ]] || exit 98
             printf 'hello\tinstall ok installed\t2.10\n' >>"$FIXTURE/packages"
             [[ ! -e $FIXTURE/install-failed ]] || exit 100
+            if [[ -e $FIXTURE/fail-after-install-query ]]; then touch "$FIXTURE/unknown"; fi
         fi ;;
-    sudo) exec "$@" ;;
+    sudo) printf '%s\n' "$@" >"$FIXTURE/sudo-args"; exec env -u APT_CONFIG "$@" ;;
 esac
 SH
   chmod +x "$FIXTURE/bin/probe"
@@ -233,4 +236,81 @@ library() { bash -c 'set -euo pipefail; source "$ROOT/lib/packages.sh"; eval "$1
   [ "$status" != 0 ]
   [[ "$output" == *'estado mudou'* ]]
   [ "$(wc -l <"$PACKAGE_LOG")" = 1 ]
+}
+
+@test "fix-round-1 requested swap managers cannot enter baseline" {
+  for package in systemd-swap swapspace dphys-swapfile zswap-tools; do
+    run library "apt_plan baseline $package"
+    [ "$status" != 0 ]
+    [ ! -e "$PACKAGE_LOG" ]
+  done
+}
+
+@test "fix-round-1 transitive swap managers are rejected by the same classifier" {
+  for package in systemd-swap swapspace dphys-swapfile zswap-tools; do
+    printf 'Inst %s (1.0 Ubuntu)\n' "$package" >"$FIXTURE/simulation"
+    run library 'apt_plan baseline hello'
+    [ "$status" != 0 ]
+    [[ "$output" == *gerenciador* ]]
+  done
+}
+
+@test "fix-round-1 installed swap managers block zram before APT" {
+  for package in systemd-swap swapspace dphys-swapfile zswap-tools; do
+    printf '%s\tinstall ok installed\t1.0\n' "$package" >"$FIXTURE/packages"
+    run library 'apt_plan zram zram-tools'
+    [ "$status" != 0 ]
+    [ ! -e "$PACKAGE_LOG" ]
+  done
+}
+
+@test "fix-round-1 unrelated template swapon metadata blocks before APT" {
+  printf 'personal@.service enabled enabled\n' >"$FIXTURE/units"
+  printf '[Unit]\nDescription=Private helper\n[Service]\nExecStart=/usr/sbin/swapon --priority 200 /swapfile\n' >"$FIXTURE/template"
+  run library 'apt_plan zram zram-tools'
+  [ "$status" != 0 ]
+  [ ! -e "$PACKAGE_LOG" ]
+}
+
+@test "fix-round-1 production sudo explicitly carries the simulation APT_CONFIG" {
+  export APT_CONFIG="$FIXTURE/apt config"
+  printf 'APT::Sandbox::User "root";\n' >"$APT_CONFIG"
+  touch "$FIXTURE/before-observed"
+  run library '
+        source "$ROOT/lib/backup.sh"
+        apt_plan baseline hello
+        run_id=$(begin_run)
+        apt_apply "$run_id" baseline --confirmed "$APT_PLAN_TOKEN" hello
+    '
+  [ "$status" = 0 ]
+  run python3 - <<'PY'
+import os, pathlib
+p = pathlib.Path(os.environ["FIXTURE"])
+config = os.environ["APT_CONFIG"]
+assert (p / "apt-config.log").read_text().splitlines() == [config] * 3
+args = (p / "sudo-args").read_text().splitlines()
+assert args[:4] == ["env", "APT_CONFIG=" + config, "DEBIAN_FRONTEND=noninteractive", "apt-get"]
+PY
+  [ "$status" = 0 ]
+}
+
+@test "fix-round-1 successful install then failed discovery records unknown without false package events" {
+  touch "$FIXTURE/before-observed" "$FIXTURE/fail-after-install-query"
+  run library '
+        source "$ROOT/lib/backup.sh"
+        apt_plan baseline hello
+        run_id=$(begin_run)
+        apt_apply "$run_id" baseline --confirmed "$APT_PLAN_TOKEN" hello
+    '
+  [ "$status" != 0 ]
+  run python3 - <<'PY'
+import json, os, pathlib
+p = next(pathlib.Path(os.environ["XDG_STATE_HOME"]).glob("**/packages-baseline-after.json"))
+audit = json.loads(p.read_text())
+assert audit["apt_exit"] == 0
+assert "[packages]\nunknown\n" in audit["inventory"]
+events = [json.loads(line) for line in (p.parent / "manifest.jsonl").read_text().splitlines()]
+assert not [event for event in events if event["event"] == "package"]
+PY
+  [ "$status" = 0 ]
 }
