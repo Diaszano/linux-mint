@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Only this helper runs before the parent verifies the live cgroup.
+[[ $# -ge 4 ]] || exit 1
+ipc=$1
+parent=$2
+shift 2
+[[ $1 == -- && -d $ipc && ! -L $ipc && -O $ipc ]] || exit 1
+[[ $(stat -c %a -- "$ipc") == 700 && $parent =~ ^[1-9][0-9]*$ ]] || exit 1
+shift
+umask 077
+printf '%s\n' "$$" >"$ipc/pid.tmp"
+mv -- "$ipc/pid.tmp" "$ipc/pid"
+deadline=$((SECONDS + 12))
+while [[ ! -f $ipc/release ]]; do
+    kill -0 "$parent" 2>/dev/null || exit 1
+    ((SECONDS < deadline)) || exit 124
+    sleep .02
+done
+read -r expected <"$ipc/release"
+[[ $(cat "/proc/$$/cgroup") == "0::$expected" ]] || exit 1
+kill -0 "$parent" 2>/dev/null || exit 1
+exec "$@"
