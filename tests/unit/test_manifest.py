@@ -44,6 +44,63 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(manifest.parent.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE((manifest.parent / 'backups').stat().st_mode), 0o700)
 
+    def test_verified_artifact_event_records_pinned_mise_identity(self):
+        run = self.begin()
+        digest = 'a' * 64
+        event = dict(event='artifact', module='mise', version='v2026.10.18',
+                     name='mise-v2026.10.18-linux-x64',
+                     url='https://github.com/jdx/mise/releases/download/v2026.10.18', sha256=digest)
+        result = self.cli('append', run, json.dumps(event))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.cli('verify', run).returncode, 0)
+        self.assertEqual(self.events(run)[-1], event)
+
+    def test_artifact_event_rejects_unverified_digest(self):
+        run = self.begin()
+        event = dict(event='artifact', module='mise', version='v2026.10.18',
+                     name='mise-v2026.10.18-linux-x64',
+                     url='https://github.com/jdx/mise/releases/download/v2026.10.18',
+                     sha256='not-a-digest')
+        wrong_version = dict(event, version='v2026.10.19', sha256='a' * 64)
+        for candidate in (event, wrong_version):
+            before = self.journal(run).read_bytes()
+            result = self.cli('append', run, json.dumps(candidate))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.journal(run).read_bytes(), before)
+
+    def test_install_exclusive_does_not_replace_an_existing_binary(self):
+        run = self.begin()
+        source = self.base / 'mise'
+        target = self.base / 'bin' / 'mise'
+        source.write_bytes(b'verified')
+        target.parent.mkdir()
+        target.write_bytes(b'user binary')
+        spec = importlib.util.spec_from_file_location('manifest_exclusive_test', HELPER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with patch.dict(os.environ, self.env):
+            with self.assertRaises(module.UnsafeState):
+                module.install_owned_file(run, 'mise', str(source), str(target), exclusive=True)
+        self.assertEqual(target.read_bytes(), b'user binary')
+
+    def test_managed_block_preserves_unrelated_text_and_replaces_once(self):
+        run = self.begin()
+        target = self.base / '.bashrc'
+        target.write_text('export KEEP=1\n')
+        spec = importlib.util.spec_from_file_location('manifest_block_test', HELPER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        block = b'# >>> managed >>>\nexport MISE=1\n# <<< managed <<<\n'
+        with patch.dict(os.environ, self.env):
+            module.install_owned_block(run, 'mise', str(target), b'# >>> managed >>>',
+                                       b'# <<< managed <<<', block)
+            module.install_owned_block(run, 'mise', str(target), b'# >>> managed >>>',
+                                       b'# <<< managed <<<', block)
+        result = target.read_bytes()
+        self.assertIn(b'export KEEP=1\n', result)
+        self.assertEqual(result.count(b'# >>> managed >>>'), 1)
+        self.assertEqual(result.count(b'export MISE=1'), 1)
+
     def test_listing_before_first_run_is_read_only_and_empty(self):
         result = self.cli('list')
         self.assertEqual(result.returncode, 0, result.stderr)

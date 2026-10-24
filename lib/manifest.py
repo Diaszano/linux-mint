@@ -83,6 +83,7 @@ SCHEMAS = {
     'service': {'event', 'status', 'module', 'unit', 'scope', 'before_enabled', 'before_active',
                 'applied_enabled', 'applied_active'},
     'package': {'event', 'module', 'package', 'before_installed', 'applied_installed'},
+    'artifact': {'event', 'module', 'version', 'name', 'url', 'sha256'},
     'rollback': {'event', 'operation', 'status'},
 }
 
@@ -102,6 +103,14 @@ def validate(event):
         return
     if not isinstance(event['module'], str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', event['module']):
         raise UnsafeState('invalid module')
+    if event['event'] == 'artifact':
+        if (event['module'] != 'mise' or event['version'] != 'v2026.10.18'
+                or event['name'] != 'mise-v2026.10.18-linux-x64'
+                or event['url'] != 'https://github.com/jdx/mise/releases/download/v2026.10.18'):
+            raise UnsafeState('unreviewed artifact')
+        if not isinstance(event['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', event['sha256']):
+            raise UnsafeState('invalid artifact digest')
+        return
     if event['event'] == 'service':
         if (not isinstance(event['unit'], str)
                 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.@:-]{0,239}\.service', event['unit'])
@@ -326,54 +335,97 @@ def snapshot_file(run, module, path):
         snapshot_locked(fd, events, run, module, path, data, info)
 
 
-def install_owned_file(run, module, source, target):
+def _install_bytes(run, module, target, parent, name, fd, events, before, info, data, source_info,
+                   exclusive=False):
+    expected = None
+    for event in events:
+        if event.get('path') != target:
+            continue
+        if event['module'] != module:
+            raise UnsafeState('file owned by another module')
+        if event['event'] == 'snapshot':
+            expected = {event['before_sha256']}
+        elif event['event'] == 'applied':
+            expected = {event['applied_sha256']}
+        elif event['event'] == 'intent':
+            expected = {event['before_sha256'], event['intended_sha256']}
+    if expected is not None and digest(before) not in expected:
+        raise UnsafeState('target changed since snapshot')
+    if exclusive and before is not None:
+        raise UnsafeState('target already exists')
+    if before == data:
+        return
+    snapshot_locked(fd, events, run, module, target, before, info)
+    temp = '.vaio-' + uuid.uuid4().hex
+    saved = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+    try:
+        write_file(saved, data, info or source_info)
+        append_event(fd, dict(event='intent', module=module, path=target,
+                             before_sha256=digest(before), intended_sha256=digest(data)))
+        current, current_info = read_file(parent, name)
+        if current != before or (info is not None and
+                (current_info.st_dev, current_info.st_ino, current_info.st_mode,
+                 current_info.st_uid, current_info.st_gid, current_info.st_mtime_ns, current_info.st_ctime_ns)
+                != (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+                    info.st_mtime_ns, info.st_ctime_ns)):
+            raise UnsafeState('target changed')
+        if exclusive:
+            os.link(temp, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+            os.unlink(temp, dir_fd=parent)
+        else:
+            os.replace(temp, name, src_dir_fd=parent, dst_dir_fd=parent)
+        os.fsync(parent)
+        append_event(fd, dict(event='applied', module=module, path=target, applied_sha256=digest(data)))
+    finally:
+        os.close(saved)
+        try:
+            os.unlink(temp, dir_fd=parent)
+        except FileNotFoundError:
+            pass
+
+
+def install_owned_file(run, module, source, target, exclusive=False):
     owned_target(target)
     validate(dict(event='intent', module=module, path=target, before_sha256=None, intended_sha256='0' * 64))
     with parent_fd(source) as (parent, name):
         data, source_info = read_file(parent, name)
         if data is None:
             raise UnsafeState('missing source')
+    with journal(run) as (fd, events), parent_fd(target, create=exclusive) as (parent, name):
+        before, info = read_file(parent, name)
+        _install_bytes(run, module, target, parent, name, fd, events, before, info, data, source_info, exclusive)
+
+
+def install_owned_block(run, module, target, begin, end, block):
+    owned_target(target)
+    validate(dict(event='intent', module=module, path=target, before_sha256=None, intended_sha256='0' * 64))
+    if (not begin or not end or b'\n' in begin or b'\n' in end
+            or block.count(begin) != 1 or block.count(end) != 1
+            or not block.startswith(begin + b'\n') or not block.endswith(end + b'\n')):
+        raise UnsafeState('invalid managed block')
     with parent_fd(target) as (parent, name), journal(run) as (fd, events):
         before, info = read_file(parent, name)
-        expected = None
-        for event in events:
-            if event.get('path') != target:
-                continue
-            if event['module'] != module:
-                raise UnsafeState('file owned by another module')
-            if event['event'] == 'snapshot':
-                expected = {event['before_sha256']}
-            elif event['event'] == 'applied':
-                expected = {event['applied_sha256']}
-            elif event['event'] == 'intent':
-                expected = {event['before_sha256'], event['intended_sha256']}
-        if expected is not None and digest(before) not in expected:
-            raise UnsafeState('target changed since snapshot')
-        if before == data:
-            return
-        snapshot_locked(fd, events, run, module, target, before, info)
-        temp = '.vaio-' + uuid.uuid4().hex
-        saved = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
-        try:
-            write_file(saved, data, info or source_info)
-            append_event(fd, dict(event='intent', module=module, path=target,
-                                  before_sha256=digest(before), intended_sha256=digest(data)))
-            current, current_info = read_file(parent, name)
-            if current != before or (info is not None and
-                    (current_info.st_dev, current_info.st_ino, current_info.st_mode,
-                     current_info.st_uid, current_info.st_gid, current_info.st_mtime_ns, current_info.st_ctime_ns)
-                    != (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-                        info.st_mtime_ns, info.st_ctime_ns)):
-                raise UnsafeState('target changed')
-            os.replace(temp, name, src_dir_fd=parent, dst_dir_fd=parent)
-            os.fsync(parent)
-            append_event(fd, dict(event='applied', module=module, path=target, applied_sha256=digest(data)))
-        finally:
-            os.close(saved)
-            try:
-                os.unlink(temp, dir_fd=parent)
-            except FileNotFoundError:
-                pass
+        if before is None:
+            raise UnsafeState('startup file does not exist')
+        begin_count, end_count = before.count(begin), before.count(end)
+        if (begin_count, end_count) == (0, 0):
+            separator = b'' if not before or before.endswith(b'\n') else b'\n'
+            updated = before + separator + block
+        elif (begin_count, end_count) == (1, 1):
+            start = before.find(begin)
+            finish = before.find(end, start + len(begin))
+            if ((start and before[start - 1:start] != b'\n') or finish < 0
+                    or (finish + len(end) < len(before)
+                        and before[finish + len(end):finish + len(end) + 1] != b'\n')):
+                raise UnsafeState('malformed managed block')
+            line_start = before.rfind(b'\n', 0, start) + 1
+            line_end = before.find(b'\n', finish + len(end))
+            line_end = len(before) if line_end < 0 else line_end + 1
+            updated = before[:line_start] + block + before[line_end:]
+        else:
+            raise UnsafeState('duplicate managed block markers')
+        _install_bytes(run, module, target, parent, name, fd, events,
+                       before, info, updated, info)
 
 
 def rollback_operations(events):
@@ -614,16 +666,20 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('init')
     sub.add_parser('list')
-    for command in ('verify', 'append', 'snapshot', 'install', 'rollback-preview', 'rollback-apply'):
+    for command in ('verify', 'append', 'snapshot', 'install', 'install-exclusive', 'install-block',
+                    'rollback-preview', 'rollback-apply'):
         p = sub.add_parser(command)
         p.add_argument('run')
         if command == 'append':
             p.add_argument('event')
-        if command in ('snapshot', 'install'):
+        if command in ('snapshot', 'install', 'install-exclusive', 'install-block'):
             p.add_argument('module')
             p.add_argument('path')
-        if command == 'install':
+        if command in ('install', 'install-exclusive'):
             p.add_argument('target')
+        if command == 'install-block':
+            p.add_argument('begin')
+            p.add_argument('end')
     args = parser.parse_args()
     try:
         if args.command == 'init':
@@ -657,6 +713,11 @@ def main():
             snapshot_file(args.run, args.module, args.path)
         elif args.command == 'install':
             install_owned_file(args.run, args.module, args.path, args.target)
+        elif args.command == 'install-exclusive':
+            install_owned_file(args.run, args.module, args.path, args.target, exclusive=True)
+        elif args.command == 'install-block':
+            install_owned_block(args.run, args.module, args.path,
+                                args.begin.encode(), args.end.encode(), sys.stdin.buffer.read())
         elif args.command in ('rollback-preview', 'rollback-apply'):
             return 0 if rollback_run(args.run, apply=args.command == 'rollback-apply') else 1
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):

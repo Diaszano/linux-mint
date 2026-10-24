@@ -17,6 +17,15 @@ package_selection() {
     kvm) printf '%s\n' qemu-kvm cpu-checker libvirt-daemon-system libvirt-clients virt-manager ;;
     zram) printf '%s\n' zram-tools ;;
     earlyoom) printf '%s\n' earlyoom ;;
+    mise)
+      local mise_target=${HOME:-}/.local/bin/mise
+      if [[ -e $mise_target || -L $mise_target ]]; then
+        [[ -f $mise_target && -x $mise_target && ! -L $mise_target ]] && return 0
+        return 1
+      fi
+      [[ -n $(type -P mise 2>/dev/null) ]] && return 0
+      command -v minisign >/dev/null || printf '%s\n' minisign
+      ;;
     docker)
       _apt_barrier docker || return 1
       if [[ $APT_DOCKER_PROVIDER == ce ]]; then
