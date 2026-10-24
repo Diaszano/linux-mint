@@ -55,7 +55,7 @@ _apt_barrier() {
     return 1
   }
   evidence=${PREFLIGHT_SERVICES,,}
-  if [[ ${APT_MEMORY_MASKED_UNIT:-} =~ ^(zramswap|earlyoom)\.service$ ]]; then
+  if [[ ${APT_MEMORY_MASKED_UNIT:-} == zramswap.service ]]; then
     evidence=''
     while IFS= read -r service_line; do
       if [[ $service_line == system:* || $service_line == user:* ]]; then
@@ -236,6 +236,10 @@ with m.journal(run), m.parent_fd(m.run_path(run) + "/packages-" + module + "-" +
 # Call only after displaying apt_plan output and explicitly confirming its token.
 apt_apply() {
   local run=${1:-} module=${2:-} token=${4:-} result=0 apt_result package installed before_inventory simulation
+if [[ $module == earlyoom ]]; then
+printf 'Error: earlyoom installation is blocked until constrained-build kill priority is guaranteed.\n' >&2
+return 1
+fi
   [[ $# -ge 5 && ${3:-} == --confirmed && -n ${APT_PLAN_TOKEN:-} && $token == "$APT_PLAN_TOKEN" ]] || {
     printf 'Erro: aplicação exige a prévia confirmada.\n' >&2
     return 1

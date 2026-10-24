@@ -110,7 +110,7 @@ for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swap
   [[ -v selected[$module] ]] || continue
   printf 'module=%s\n' "$module"
   case "$module" in
-    baseline|kvm|zram|earlyoom)
+    baseline|kvm|zram)
       mapfile -t packages < <(package_selection "$module")
       printf 'packages=%s\n' "${packages[*]}" ;;
   esac
@@ -121,7 +121,7 @@ for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swap
     wrappers) printf 'file=%s/.local/bin/dev-*\n' "$HOME" ;;
     zram) printf 'command=sudo apt-get install zram-tools\nfile=/etc/default/zramswap\n' ;;
     docker) printf 'command=sudo apt-get install [provedor Docker após verificação]\n' ;;
-    earlyoom) printf 'command=sudo apt-get install earlyoom\n' ;;
+    earlyoom) printf 'availability=unavailable: constrained-build priority is not guaranteed\n' ;;
     gradle-global) printf 'file=%s/gradle.properties\n' "${GRADLE_USER_HOME:-$HOME/.gradle}" ;;
     swappiness) printf 'file=/etc/sysctl.d/[arquivo gerenciado]\nvm.swappiness=%s\n' "$swappiness" ;;
   esac

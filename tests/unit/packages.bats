@@ -352,3 +352,11 @@ PY
     printf 'bash\tinstall ok installed\t5.2\n' >"$FIXTURE/packages"
   done
 }
+
+@test "earlyoom package apply stays blocked without build-first kill priority" {
+  run library 'source "$ROOT/lib/packages.sh"; apt_apply ignored earlyoom --confirmed unused earlyoom'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'constrained-build kill priority'* ]]
+  [ ! -e "$PACKAGE_LOG" ]
+  [ ! -e "$FIXTURE/sudo-args" ]
+}

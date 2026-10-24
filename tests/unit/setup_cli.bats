@@ -117,6 +117,8 @@ run bash "$ROOT/setup.sh" --dry-run --yes --docker --zram
 run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --skip kvm
   [ "$status" -eq 0 ]
   [[ "$output" == *'module=earlyoom'* ]]
+  [[ "$output" == *'earlyoom unavailable'* ]]
+  [[ "$output" != *'packages=earlyoom'* && "$output" != *'command=sudo apt-get install earlyoom'* ]]
   [[ "$output" == *'module=gradle-global'* ]]
   [[ "$output" != *'module=mise'* ]]
   [[ "$output" != *'module=kvm'* ]]

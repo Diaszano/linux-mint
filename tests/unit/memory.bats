@@ -75,11 +75,24 @@ plan() {
   done
 }
 
-@test "earlyoom previews an explicit conservative kill policy" {
-  run plan --earlyoom
-  [ "$status" = 0 ]
-  [[ "$output" == *'EARLYOOM_ARGS="-m 10,5 -s 10,5"'* ]]
-  [[ "$output" == *'largest process'* && "$output" == *'terminate applications'* ]]
+@test "earlyoom remains unavailable until builds can be preferred safely" {
+  run bash -c '
+    source "$ROOT/lib/memory.sh"
+    preflight_install_inventory() {
+      PREFLIGHT_PACKAGES=$'"'"'bash\tinstall ok installed\t5.2'"'"'
+      PREFLIGHT_PACKAGES_STATE=known PREFLIGHT_SERVICES=known PREFLIGHT_CONFLICT_SERVICES=known
+      PREFLIGHT_SWAPS= PREFLIGHT_ZRAM=
+    }
+    _memory_package_contract() { :; }
+    apt_plan() { echo APT_PLAN_REACHED; return 1; }
+    sudo() { echo SYSTEMD_OR_APT_REACHED; return 1; }
+    memory_plan --earlyoom
+    token=$MEMORY_PLAN_TOKEN
+    memory_apply fake-run earlyoom "$token"
+  '
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'cannot guarantee priority for constrained builds'* ]]
+  [[ "$output" != *'APT_PLAN_REACHED'* && "$output" != *'SYSTEMD_OR_APT_REACHED'* ]]
 }
 
 @test "sysctl conflict parser finds active vm.swappiness assignments only" {

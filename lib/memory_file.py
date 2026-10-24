@@ -13,7 +13,6 @@ import manifest as m
 
 TARGETS = {
     'zram': '/etc/default/zramswap',
-    'earlyoom': '/etc/default/earlyoom',
     'swappiness': '/etc/sysctl.d/90-vaio-fe16-swappiness.conf',
 }
 

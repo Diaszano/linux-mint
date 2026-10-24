@@ -30,10 +30,6 @@ _memory_package_contract() {
     candidate=$(apt-cache policy zram-tools 2>/dev/null) || return 1
     [[ $candidate == *'Candidate: 0.3.3.1-1.1'* ]] || _memory_fail 'pacote zram-tools não revisado; configure manualmente.'
     ;;
-  earlyoom)
-    candidate=$(apt-cache policy earlyoom 2>/dev/null) || return 1
-    [[ $candidate == *'Candidate: 1.7-2'* ]] || _memory_fail 'pacote earlyoom não revisado; configure manualmente.'
-    ;;
   *) return 1 ;;
   esac
 }
@@ -142,6 +138,7 @@ _memory_conflict() {
 memory_plan() {
   local module='' signature
   MEMORY_SWAPPINESS=''
+  MEMORY_PLAN_SUPPORTED=yes
   while (($#)); do
     case $1 in
     --zram | --earlyoom)
@@ -188,7 +185,10 @@ memory_plan() {
     if [[ $module == zram ]]; then
       [[ ${PREFLIGHT_SWAPS:-} == *$'\t'* ]] || printf 'Aviso: nenhum disk swap detectado; nenhum será criado.\n'
       printf 'zram-tools: ALGO=lz4 PERCENT=50 PRIORITY=100; zramswap.service\n'
-    else printf 'earlyoom.service: EARLYOOM_ARGS="-m 10,5 -s 10,5"; SIGTERM/SIGKILL the largest process only below both memory and swap thresholds; may terminate applications.\n'; fi
+    else
+      MEMORY_PLAN_SUPPORTED=no
+      printf 'earlyoom unavailable: cannot guarantee priority for constrained builds over the interactive desktop.\n'
+    fi
     ;;
   swappiness)
     _memory_has_zram || {
@@ -200,7 +200,7 @@ memory_plan() {
     ;;
   esac
   MEMORY_PLAN_MODULE=$module
-  signature=$(printf '%s\0' "$module" "$MEMORY_SWAPPINESS" "$PREFLIGHT_PACKAGES" "$PREFLIGHT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM" | sha256sum)
+  signature=$(printf '%s\0' "$module" "$MEMORY_SWAPPINESS" "$MEMORY_PLAN_SUPPORTED" "$PREFLIGHT_PACKAGES" "$PREFLIGHT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM" | sha256sum)
   MEMORY_PLAN_TOKEN=${signature%% *}
 }
 
@@ -210,9 +210,13 @@ memory_apply() {
     _memory_fail 'memory_apply exige módulo e token da prévia confirmada.'
     return 2
   }
+  if [[ $module == earlyoom && ${MEMORY_PLAN_SUPPORTED:-yes} != yes ]]; then
+    _memory_fail 'earlyoom apply refused: constrained-build priority is not guaranteed.'
+    return 1
+  fi
   _memory_inventory || return 1
   case $module in
-  zram | earlyoom)
+  zram)
     _memory_conflict "$module" || return 1
     _memory_package_contract "$module" || return 1
     ;;
@@ -228,10 +232,6 @@ memory_apply() {
     unit=zramswap.service
     package=zram-tools
     ;;
-  earlyoom)
-    unit=earlyoom.service
-    package=earlyoom
-    ;;
   esac
   if [[ $module == zram ]]; then _memory_zram_capable || {
     _memory_fail 'módulo zram indisponível no kernel atual.'
@@ -246,7 +246,7 @@ memory_apply() {
     python3 "$_MEMORY_LIB/memory_file.py" audit "$run" swappiness sysctl-applied "{\"value\":\"$(sysctl -n vm.swappiness)\"}" || return 1
     return 0
   fi
-  if [[ $module == zram || $module == earlyoom ]]; then
+  if [[ $module == zram ]]; then
     prior_enabled=$(systemctl is-enabled "$unit" 2>/dev/null || true)
     prior_active=no
     systemctl is-active --quiet "$unit" && prior_active=yes
@@ -279,10 +279,8 @@ memory_apply() {
   fi
   if [[ $module == zram ]]; then
     config=$'ALGO=lz4\nPERCENT=50\nPRIORITY=100\n'
-  elif [[ $module == earlyoom ]]; then
-    config=$'EARLYOOM_ARGS="-m 10,5 -s 10,5"\n'
   fi
-  if [[ $module == zram || $module == earlyoom ]]; then
+  if [[ $module == zram ]]; then
     printf '%s' "$config" | python3 "$_MEMORY_LIB/memory_file.py" install "$run" "$module" || {
       [[ $prior_enabled == masked || $prior_enabled == masked-runtime ]] || sudo systemctl unmask --runtime "$unit" >/dev/null || true
       return 1
