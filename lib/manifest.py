@@ -122,6 +122,21 @@ def no_duplicates(pairs):
     return result
 
 
+def validate_context(event, run):
+    validate(event)
+    if event['event'] == 'snapshot' and event['backup'] is not None:
+        backup = event['backup']
+        prefix = run_path(run) + '/backups/'
+        if not backup.startswith(prefix) or not re.fullmatch(r'[0-9a-f]{32}', backup[len(prefix):]):
+            raise UnsafeState('foreign backup')
+        with parent_fd(backup) as (parent, name):
+            saved, info = read_file(parent, name)
+            if (info is None or digest(saved) != event['before_sha256']
+                    or (stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
+                    != (event['mode'], event['uid'], event['gid'])):
+                raise UnsafeState('backup changed')
+
+
 def read_events(fd, run):
     os.lseek(fd, 0, os.SEEK_SET)
     with os.fdopen(os.dup(fd), 'r', encoding='utf-8') as stream:
@@ -136,17 +151,7 @@ def read_events(fd, run):
     if not events or events[0] != {'event': 'run', 'run_id': run}:
         raise UnsafeState('wrong run')
     for event in events:
-        if event['event'] == 'snapshot' and event['backup'] is not None:
-            backup = event['backup']
-            prefix = run_path(run) + '/backups/'
-            if not backup.startswith(prefix) or not re.fullmatch(r'[0-9a-f]{32}', backup[len(prefix):]):
-                raise UnsafeState('foreign backup')
-            with parent_fd(backup) as (parent, name):
-                saved, info = read_file(parent, name)
-                if (info is None or digest(saved) != event['before_sha256']
-                        or (stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
-                        != (event['mode'], event['uid'], event['gid'])):
-                    raise UnsafeState('backup changed')
+        validate_context(event, run)
     return events
 
 
@@ -257,6 +262,7 @@ def snapshot_locked(fd, events, run, module, path, data, info):
             finally:
                 os.close(saved)
         event.update(backup=backup, mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, gid=info.st_gid)
+    validate_context(event, run)
     append_event(fd, event)
     events.append(event)
 
@@ -352,8 +358,11 @@ def main():
                 with parent_fd(runs + '/entry') as (parent, _):
                     for run in sorted(os.listdir(parent)):
                         run_path(run)
-                        with journal(run):
-                            found.append(run)
+                        try:
+                            with journal(run):
+                                found.append(run)
+                        except (OSError, ValueError, TypeError, KeyError):
+                            print(f'Aviso: execução inválida ou incompleta ignorada: {run}', file=sys.stderr)
             except FileNotFoundError:
                 if os.path.lexists(runs):
                     raise
@@ -364,6 +373,7 @@ def main():
                     event = json.loads(args.event, object_pairs_hook=no_duplicates)
                     if isinstance(event, dict) and event.get('event') == 'run':
                         raise UnsafeState('duplicate run header')
+                    validate_context(event, args.run)
                     append_event(fd, event)
         elif args.command == 'snapshot':
             snapshot_file(args.run, args.module, args.path)

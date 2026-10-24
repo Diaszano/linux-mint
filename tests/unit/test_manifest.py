@@ -61,6 +61,37 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(self.cli('verify', run).returncode, 0)
         self.assertEqual(json.loads(self.cli('list').stdout), [first, second])
 
+    def test_append_rejects_foreign_backup_without_changing_journal(self):
+        run = self.begin()
+        target = self.base / 'target'
+        target.write_text('original')
+        self.assertEqual(self.cli('snapshot', run, 'baseline', target).returncode, 0)
+        event = self.events(run)[-1]
+        before = self.journal(run).read_bytes()
+        for backup in ('/tmp/x', str(self.journal(run).parent / 'backups' / ('f' * 32))):
+            event['backup'] = backup
+            result = self.cli('append', run, json.dumps(event))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.journal(run).read_bytes(), before)
+            self.assertEqual(self.cli('verify', run).returncode, 0)
+
+    def test_interrupted_initialization_does_not_hide_healthy_runs(self):
+        healthy = self.begin()
+        spec = importlib.util.spec_from_file_location('manifest', HELPER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with patch.dict(os.environ, self.env), patch.object(module, 'append_event', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                module.begin_run()
+        result = self.cli('list')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [healthy])
+        self.assertIn('incompleta', result.stderr)
+        self.assertEqual(self.cli('verify', healthy).returncode, 0)
+        incomplete = [p.name for p in self.journal(healthy).parent.parent.iterdir() if p.name != healthy]
+        self.assertEqual(len(incomplete), 1)
+        self.assertEqual(self.journal(incomplete[0]).read_bytes(), b'')
+
     def test_append_rejects_content_unknown_keys_invalid_paths_and_corruption(self):
         run = self.begin()
         before = self.journal(run).read_bytes()
