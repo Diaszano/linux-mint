@@ -49,12 +49,23 @@ _apt_memory_manager() {
 }
 
 _apt_barrier() {
-  local module=$1 package status evidence device type size priority extra
+  local module=$1 package status evidence device type size priority extra service_line skip_line=no
   preflight_install_inventory || {
     printf 'Erro: inventário de pacotes, swap ou serviços indeterminado.\n' >&2
     return 1
   }
   evidence=${PREFLIGHT_SERVICES,,}
+  if [[ ${APT_MEMORY_MASKED_UNIT:-} =~ ^(zramswap|earlyoom)\.service$ ]]; then
+    evidence=''
+    while IFS= read -r service_line; do
+      if [[ $service_line == system:* || $service_line == user:* ]]; then
+        skip_line=no
+        [[ $service_line == "system:${APT_MEMORY_MASKED_UNIT}" ]] && skip_line=yes
+      fi
+      [[ $skip_line == yes ]] && continue
+      evidence+="$service_line"$'\n'
+    done <<<"${PREFLIGHT_SERVICES,,}"
+  fi
   while IFS=$'\t' read -r package status _; do
     [[ $status == *' ok installed' ]] || continue
     case "$module:$(_apt_memory_manager "$package")" in
@@ -66,7 +77,11 @@ _apt_barrier() {
   done <<<"$PREFLIGHT_PACKAGES"
   while read -r device type size priority extra; do
     [[ -n $device ]] || continue
-    [[ $device == /* && -n $type && $size =~ ^[0-9]+([.,][0-9]+)?[KMGTPE]?$ && $priority =~ ^-?[0-9]+$ && -z $extra ]] || {
+    if [[ -n $extra && $size =~ ^[0-9]+([.,][0-9]+)?[KMGTPEB]?$ && $priority =~ ^[0-9]+([.,][0-9]+)?[KMGTPEB]?$ && $extra =~ ^-?[0-9]+$ ]]; then
+      priority=$extra
+      extra=''
+    fi
+    [[ $device == /* && -n $type && $size =~ ^[0-9]+([.,][0-9]+)?[KMGTPEB]?$ && $priority =~ ^-?[0-9]+$ && -z $extra ]] || {
       printf 'Erro: estado do swap indeterminado.\n' >&2
       return 1
     }

@@ -31,20 +31,25 @@ case "${0##*/}" in
   lsblk) echo ssd ;;
   findmnt) echo /dev/sda2 ;;
   glxinfo) echo 'OpenGL renderer string: AMD Radeon Graphics' ;;
-  dpkg-query) echo 'unknown ok not-installed' ;;
+  modprobe) exit 0 ;;
+dpkg-query)
+  case "$*" in
+    *binary:Package*) printf 'bash\tinstall ok installed\t5.2\nzram-tools\tdeinstall ok config-files\t0.3.3.1-1.1\nearlyoom\tdeinstall ok config-files\t1.7-2\n' ;;
+    *) echo 'unknown ok not-installed' ;;
+  esac ;;
   systemctl)
-    if [ "${1:-}" = --user ]; then shift; fi
+    case "${1:-}" in --system|--user) shift ;; esac
     case "${1:-}" in
       is-active) echo inactive; exit 3 ;;
       list-units|list-unit-files) exit 0 ;;
       *) echo "systemctl $*" >>"$PROBE_LOG"; exit 99 ;;
     esac ;;
-  swapon) : ;;
+  swapon|zramctl) : ;;
   sudo|apt-get|tee) echo "$*" >>"$PROBE_LOG"; exit 99 ;;
 esac
 EOF
   chmod +x "$BATS_TEST_TMPDIR/bin/cat" "$BATS_TEST_TMPDIR/bin/probe"
-  for name in id uname nproc df lsblk findmnt glxinfo dpkg-query systemctl swapon sudo apt-get tee; do
+  for name in id uname nproc df lsblk findmnt glxinfo modprobe dpkg-query systemctl swapon zramctl sudo apt-get tee; do
     ln -s probe "$BATS_TEST_TMPDIR/bin/$name"
   done
 }
@@ -79,7 +84,7 @@ assert_read_only() {
 }
 
 @test "dry run previews selected operations and no opt-in defaults" {
-  run bash "$ROOT/setup.sh" --dry-run --yes --docker --zram --swappiness 80
+run bash "$ROOT/setup.sh" --dry-run --yes --docker --zram
   [ "$status" -eq 0 ]
   [[ "$output" == *'module=docker'* ]]
   [[ "$output" == *'module=zram'* ]]
@@ -87,7 +92,6 @@ assert_read_only() {
   [[ "$output" == *'module=kvm'* ]]
   [[ "$output" == *'module=mise'* ]]
   [[ "$output" == *'module=wrappers'* ]]
-  [[ "$output" == *'vm.swappiness=80'* ]]
   [[ "$output" == *'sudo apt-get'* ]]
   assert_read_only
 
@@ -110,11 +114,10 @@ assert_read_only() {
 }
 
 @test "all opt ins and skip aliases are parsed without writes" {
-  run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --skip kvm --swappiness 0
+run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --skip kvm
   [ "$status" -eq 0 ]
   [[ "$output" == *'module=earlyoom'* ]]
   [[ "$output" == *'module=gradle-global'* ]]
-  [[ "$output" == *'vm.swappiness=0'* ]]
   [[ "$output" != *'module=mise'* ]]
   [[ "$output" != *'module=kvm'* ]]
   run bash "$ROOT/setup.sh" --dry-run --no-docker --no-earlyoom

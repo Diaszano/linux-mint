@@ -5,6 +5,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/preflight.sh"
 source "$SCRIPT_DIR/lib/packages.sh"
+source "$SCRIPT_DIR/lib/memory.sh"
 
 usage() {
   cat <<'EOF'
@@ -99,6 +100,10 @@ else
   for module in baseline kvm mise wrappers; do selected[$module]=1; done
 fi
 for module in "${!skip[@]}"; do unset 'selected[$module]'; done
+
+if [[ -v selected[zram] ]]; then memory_plan --zram || exit 1; fi
+if [[ -v selected[earlyoom] ]]; then memory_plan --earlyoom || exit 1; fi
+if [[ -v selected[swappiness] ]]; then memory_plan --swappiness "$swappiness" || exit 1; fi
 
 printf 'Prévia de operações (nenhuma alteração será feita):\n'
 for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swappiness; do
