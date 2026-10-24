@@ -111,7 +111,7 @@ for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swap
     zram) printf 'command=sudo apt-get install zram-tools\nfile=/etc/default/zramswap\n' ;;
     docker) printf 'command=sudo apt-get install [provedor Docker após verificação]\n' ;;
     earlyoom) printf 'command=sudo apt-get install earlyoom\n' ;;
-    gradle-global) printf 'file=%s/.gradle/gradle.properties\n' "$HOME" ;;
+    gradle-global) printf 'file=%s/gradle.properties\n' "${GRADLE_USER_HOME:-$HOME/.gradle}" ;;
     swappiness) printf 'file=/etc/sysctl.d/[arquivo gerenciado]\nvm.swappiness=%s\n' "$swappiness" ;;
   esac
 done

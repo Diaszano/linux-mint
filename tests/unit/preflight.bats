@@ -38,16 +38,36 @@ case "${0##*/}" in
   findmnt) echo /dev/sda2 ;;
   glxinfo) echo 'OpenGL renderer string: AMD Radeon Graphics' ;;
   dpkg-query)
+    [ "${PROBE_FAILURE:-0}" = 0 ] || exit 1
     case "$*" in
       *zram-tools*|*earlyoom*|*docker.io*) echo 'install ok installed' ;;
-      *) exit 1 ;;
+      *) echo 'unknown ok not-installed' ;;
     esac ;;
   systemctl)
-    case "$*" in
-      *zramswap*|*earlyoom*|*systemd-oomd*) echo active ;;
-      *) echo inactive ;;
+    [ "${PROBE_FAILURE:-0}" = 0 ] || { printf '%s\n' "${PROBE_FAILED_OUTPUT:-}"; exit 1; }
+    scope=system
+    if [ "${1:-}" = --user ]; then scope=user; shift; fi
+    case "$1" in
+      is-active)
+        case "$*" in
+          *zramswap*|*earlyoom*|*systemd-oomd*) echo active ;;
+          *) echo inactive; exit 3 ;;
+        esac ;;
+      list-units)
+        if [ "$scope" = user ]; then
+          echo 'personal-oom.service loaded inactive dead User OOM manager'
+        else
+          printf '%s\n' 'custom-zram.service loaded active exited Custom zram' 'custom.swap loaded inactive dead Disk swap' 'unrelated.service loaded active running Other service'
+        fi ;;
+      list-unit-files)
+        if [ "$scope" = user ]; then
+          echo 'personal-oom.service disabled enabled'
+        else
+          printf '%s\n' 'custom-zram.service enabled enabled' 'inactive-oom.service disabled enabled' 'custom.swap enabled enabled' 'unrelated.service enabled enabled'
+        fi ;;
+      *) exit 99 ;;
     esac ;;
-  swapon) echo '/dev/zram0 partition 4G 100' ;;
+  swapon) printf '/dev/zram0 partition 4G 100\n/dev/sda3 partition 8G -2\n' ;;
 esac
 EOF
   chmod +x "$BATS_TEST_TMPDIR/bin/cat" "$BATS_TEST_TMPDIR/bin/probe"
@@ -55,6 +75,54 @@ EOF
     ln -s probe "$BATS_TEST_TMPDIR/bin/$name"
   done
   export PREFLIGHT_FIXTURES="$BATS_TEST_TMPDIR"
+}
+
+@test "failed package and service probes retain unknown" {
+  export PROBE_FAILURE=1
+  run bash -c 'source "$1/lib/preflight.sh"; preflight_conflicts' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'zram_tools_installed=unknown'* ]]
+  [[ "$output" == *'earlyoom_installed=unknown'* ]]
+  [[ "$output" == *'zramswap_active=unknown'* ]]
+  [[ "$output" == *'systemd_oomd_active=unknown'* ]]
+  [[ "$output" == *'user_oomd_active=unknown'* ]]
+  [[ "$output" == *'docker_provider=unknown'* ]]
+  [[ "$output" == *'system_units=unknown'* ]]
+  [[ "$output" == *'system_unit_files=unknown'* ]]
+  [[ "$output" == *'user_units=unknown'* ]]
+  [[ "$output" == *'user_unit_files=unknown'* ]]
+}
+
+@test "successful absence and inactive service probes retain no" {
+  run bash -c 'source "$1/lib/preflight.sh"; preflight_package absent-package; preflight_unit is-active inactive.service' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'no\nno' ]
+}
+
+@test "failed service queries cannot confirm even a printed active state" {
+  export PROBE_FAILURE=1 PROBE_FAILED_OUTPUT=active
+  run bash -c 'source "$1/lib/preflight.sh"; preflight_unit is-active zramswap.service' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [ "$output" = unknown ]
+}
+
+@test "swap discovery retains disk and zram type size and priorities" {
+  run bash -c 'source "$1/lib/preflight.sh"; preflight_conflicts' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'swap_device=/dev/zram0 type=partition size=4G priority=100'* ]]
+  [[ "$output" == *'swap_device=/dev/sda3 type=partition size=8G priority=-2'* ]]
+}
+
+@test "unit discovery includes custom active and inactive installed managers" {
+  run bash -c 'source "$1/lib/preflight.sh"; preflight_conflicts' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'system_unit=custom-zram.service load=loaded active=active sub=exited'* ]]
+  [[ "$output" == *'system_unit=custom.swap load=loaded active=inactive sub=dead'* ]]
+  [[ "$output" == *'system_unit_file=inactive-oom.service state=disabled'* ]]
+  [[ "$output" == *'system_unit_file=custom-zram.service state=enabled'* ]]
+  [[ "$output" == *'user_unit=personal-oom.service load=loaded active=inactive sub=dead'* ]]
+  [[ "$output" == *'user_unit_file=personal-oom.service state=disabled'* ]]
+  [[ "$output" != *'unrelated.service'* ]]
 }
 
 @test "host discovery reports Mint Noble hardware and capabilities" {

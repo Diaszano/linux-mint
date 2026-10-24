@@ -31,7 +31,14 @@ case "${0##*/}" in
   lsblk) echo ssd ;;
   findmnt) echo /dev/sda2 ;;
   glxinfo) echo 'OpenGL renderer string: AMD Radeon Graphics' ;;
-  dpkg-query|systemctl) exit 1 ;;
+  dpkg-query) echo 'unknown ok not-installed' ;;
+  systemctl)
+    if [ "${1:-}" = --user ]; then shift; fi
+    case "${1:-}" in
+      is-active) echo inactive; exit 3 ;;
+      list-units|list-unit-files) exit 0 ;;
+      *) echo "systemctl $*" >>"$PROBE_LOG"; exit 99 ;;
+    esac ;;
   swapon) : ;;
   sudo|apt-get|tee) echo "$*" >>"$PROBE_LOG"; exit 99 ;;
 esac
@@ -40,6 +47,21 @@ EOF
   for name in id uname nproc df lsblk findmnt glxinfo dpkg-query systemctl swapon sudo apt-get tee; do
     ln -s probe "$BATS_TEST_TMPDIR/bin/$name"
   done
+}
+
+@test "Gradle preview follows configured user home without writing" {
+  export GRADLE_USER_HOME="$BATS_TEST_TMPDIR/custom gradle"
+  run bash "$ROOT/setup.sh" --dry-run --gradle-global
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"file=$GRADLE_USER_HOME/gradle.properties"* ]]
+  [ ! -e "$GRADLE_USER_HOME" ]
+  assert_read_only
+}
+
+@test "systemctl stub rejects and records mutation verbs" {
+  run systemctl --user start earlyoom.service
+  [ "$status" -eq 99 ]
+  [[ "$(cat "$PROBE_LOG")" == 'systemctl start earlyoom.service' ]]
 }
 
 assert_read_only() {

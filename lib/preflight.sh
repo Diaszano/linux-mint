@@ -49,28 +49,65 @@ preflight_host() {
 
 preflight_package() {
   local status
-  status=$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null) || status=
-  [[ $status == 'install ok installed' ]] && echo yes || echo no
+  status=$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null) || { echo unknown; return; }
+  case "$status" in
+    *' ok installed') echo yes ;;
+    *' ok not-installed'|*' ok config-files') echo no ;;
+    *) echo unknown ;;
+  esac
 }
 
 preflight_unit() {
-  local status
-  status=$(systemctl "$@" 2>/dev/null) || status=unknown
-  [[ $status == active ]] && echo yes || echo no
+  local status result=0
+  status=$(systemctl "$@" 2>/dev/null) || result=$?
+  case "$result:$status" in
+    0:active|0:reloading) echo yes ;;
+    3:inactive|3:failed|3:activating|3:deactivating|3:maintenance|0:inactive) echo no ;;
+    *) echo unknown ;;
+  esac
+}
+
+preflight_units() {
+  local scope=$1 query inventory listing unit load active sub
+  local -a args=()
+  [[ $scope == user ]] && args+=(--user)
+  for query in list-units list-unit-files; do
+    if [[ $query == list-units ]]; then inventory=units; else inventory=unit_files; fi
+    if listing=$(systemctl "${args[@]}" "$query" --all --no-legend --plain --no-pager 2>/dev/null); then
+      printf '%s_%s=known\n' "$scope" "$inventory"
+      while read -r unit load active sub _; do
+        [[ $unit =~ (zram|swap|oom) ]] || continue
+        if [[ $query == list-units ]]; then
+          printf '%s_unit=%s load=%s active=%s sub=%s\n' "$scope" "$unit" "$load" "$active" "$sub"
+        else
+          printf '%s_unit_file=%s state=%s\n' "$scope" "$unit" "$load"
+        fi
+      done <<< "$listing"
+    else
+      printf '%s_%s=unknown\n' "$scope" "$inventory"
+    fi
+  done
 }
 
 preflight_conflicts() {
-  local zram_tools zram_generator earlyoom docker_io docker_ce swap_devices docker_provider
+  local zram_tools zram_generator earlyoom docker_io docker_ce swap_devices docker_provider swap_records device type size priority
   zram_tools=$(preflight_package zram-tools)
   zram_generator=$(preflight_package systemd-zram-generator)
   earlyoom=$(preflight_package earlyoom)
   docker_io=$(preflight_package docker.io)
   docker_ce=$(preflight_package docker-ce)
-  swap_devices=$(swapon --show --noheadings --output NAME,TYPE,SIZE,PRIO 2>/dev/null | awk '{print $1}' | paste -sd, -) || swap_devices=unknown
+  if swap_records=$(swapon --show --noheadings --raw --output NAME,TYPE,SIZE,PRIO 2>/dev/null); then
+    swap_devices=$(awk '{print $1}' <<< "$swap_records" | paste -sd, -)
+  else
+    swap_records=''
+    swap_devices=unknown
+  fi
   [[ -n $swap_devices ]] || swap_devices=none
   docker_provider=none
   if [[ $docker_io == yes && $docker_ce == yes ]]; then
     docker_provider=conflict
+  elif [[ $docker_io == unknown || $docker_ce == unknown ]]; then
+    docker_provider=unknown
   elif [[ $docker_io == yes ]]; then
     docker_provider=docker.io
   elif [[ $docker_ce == yes ]]; then
@@ -78,4 +115,10 @@ preflight_conflicts() {
   fi
   printf 'zram_tools_installed=%s\nzram_generator_installed=%s\nzramswap_active=%s\nzram_unit_active=%s\nswap_devices=%s\nearlyoom_installed=%s\nearlyoom_active=%s\nsystemd_oomd_active=%s\nuser_oomd_active=%s\ndocker_provider=%s\n' \
     "$zram_tools" "$zram_generator" "$(preflight_unit is-active zramswap.service)" "$(preflight_unit is-active systemd-zram-setup@zram0.service)" "$swap_devices" "$earlyoom" "$(preflight_unit is-active earlyoom.service)" "$(preflight_unit is-active systemd-oomd.service)" "$(preflight_unit --user is-active systemd-oomd.service)" "$docker_provider"
+  while read -r device type size priority; do
+    [[ -n $device ]] || continue
+    printf 'swap_device=%s type=%s size=%s priority=%s\n' "$device" "$type" "$size" "$priority"
+  done <<< "$swap_records"
+  preflight_units system
+  preflight_units user
 }
