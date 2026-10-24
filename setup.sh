@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/preflight.sh"
+source "$SCRIPT_DIR/lib/packages.sh"
 
 usage() {
   cat <<'EOF'
@@ -103,6 +104,11 @@ printf 'Prévia de operações (nenhuma alteração será feita):\n'
 for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swappiness; do
   [[ -v selected[$module] ]] || continue
   printf 'module=%s\n' "$module"
+  case "$module" in
+    baseline|kvm|zram|earlyoom)
+      mapfile -t packages < <(package_selection "$module")
+      printf 'packages=%s\n' "${packages[*]}" ;;
+  esac
   case "$module" in
     baseline) printf 'command=sudo apt-get install [pacotes básicos após simulação]\n' ;;
     kvm) printf 'command=sudo apt-get install [pacotes KVM após simulação]\n' ;;

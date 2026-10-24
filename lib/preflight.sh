@@ -122,3 +122,79 @@ preflight_conflicts() {
   preflight_units system
   preflight_units user
 }
+
+# Inspect metadata as data: custom unit names can still invoke a known manager.
+# shortcut: opaque custom launchers hide their purpose; extend detection after reviewing their source.
+# shellcheck disable=SC2034
+preflight_install_inventory() {
+  local scope query listing unit _ metadata status version package content key value states evidence
+  local -a args=() sorted_units=()
+  local -A units=()
+  PREFLIGHT_PACKAGES=unknown PREFLIGHT_SWAPS=unknown PREFLIGHT_ZRAM=unknown PREFLIGHT_SERVICES=unknown PREFLIGHT_CONFLICT_SERVICES=unknown
+  PREFLIGHT_PACKAGES=$(dpkg-query -W -f='${binary:Package}\t${Status}\t${Version}\n' 2>/dev/null) || return 1
+  [[ -n $PREFLIGHT_PACKAGES ]] || return 1
+  while IFS=$'\t' read -r package status version; do
+    [[ $package =~ ^[a-z0-9][a-z0-9+.:~-]*$ && -n $version ]] || return 1
+    case "$status" in
+      *' ok installed'|*' ok config-files'|*' ok not-installed') ;;
+      *) [[ ${1:-} == audit ]] || return 1 ;;
+    esac
+  done <<< "$PREFLIGHT_PACKAGES"
+  PREFLIGHT_SWAPS=$(swapon --show --noheadings --raw --output NAME,TYPE,SIZE,PRIO 2>/dev/null) || return 1
+  PREFLIGHT_ZRAM=$(zramctl --noheadings --raw --output NAME,DISKSIZE 2>/dev/null) || return 1
+  PREFLIGHT_SERVICES=''
+  PREFLIGHT_CONFLICT_SERVICES=''
+  for scope in system user; do
+    args=(--"$scope")
+    units=()
+    for query in list-units list-unit-files; do
+      listing=$(systemctl "${args[@]}" "$query" --all --no-legend --plain --no-pager 2>/dev/null) || return 1
+      while read -r unit _; do
+        [[ -n $unit ]] || continue
+        [[ $unit =~ ^[A-Za-z0-9_.@:\\-]+\.(service|swap|target|socket|timer|path|mount|automount|device|slice|scope)$ ]] || return 1
+        case "$unit" in *.service|*.swap) units[$unit]=1 ;; esac
+      done <<< "$listing"
+    done
+    mapfile -t sorted_units < <(printf '%s\n' "${!units[@]}" | LC_ALL=C sort)
+    for unit in "${sorted_units[@]}"; do
+      [[ -n $unit ]] || continue
+      if [[ $unit == *@.service ]]; then
+        content=$(systemctl "${args[@]}" cat "$unit" --no-pager 2>/dev/null) || return 1
+        metadata=$'Id='"$unit"$'\nActiveState=template'
+        [[ ! ${content,,} =~ (zram|zswap) ]] || metadata+=$'\nManagerEvidence=zram'
+        [[ ! ${content,,} =~ (earlyoom|oomd|nohang|low-memory-monitor|out.of.memory|memory.pressure) ]] || metadata+=$'\nManagerEvidence=oom-manager'
+      else
+        metadata=$(systemctl "${args[@]}" show "$unit" --no-pager \
+          -p Id -p Description -p ExecStart -p ExecStartPre -p ExecStartPost \
+          -p LoadState -p ActiveState -p UnitFileState 2>/dev/null) || return 1
+      fi
+      [[ $metadata == *'Id='* && $metadata == *'ActiveState='* ]] || return 1
+      [[ $metadata != *'LoadState=error'* && $metadata != *'LoadState=bad-setting'* ]] || return 1
+      if [[ $metadata == *'LoadState=not-found'* ]]; then
+        [[ $metadata == *'ActiveState=inactive'* ]] || return 1
+        continue
+      fi
+      evidence=''
+      [[ ! ${metadata,,} =~ (zram|zswap) ]] || evidence+=' zram'
+      [[ ! ${metadata,,} =~ /(swapon|swapoff)([[:space:];]|$) ]] || evidence+=' swap-policy'
+      [[ ! ${metadata,,} =~ (earlyoom|oomd|nohang|low-memory-monitor|oom[[:space:]_-]*(killer|manager)|out.of.memory|memory.pressure) ]] || evidence+=' oom-manager'
+      [[ ! ${unit,,} =~ (^|[._-])oom([._@-]|$) ]] || evidence+=' oom-manager'
+      states=''
+      while IFS='=' read -r key value; do
+        case "$key" in
+          ActiveState|UnitFileState|LoadState)
+            [[ $value =~ ^[a-z-]*$ ]] || return 1
+            if [[ $key == ActiveState ]]; then
+              case "$value" in active|inactive|failed|activating|deactivating|reloading|refreshing|maintenance|template) ;; *) return 1 ;; esac
+            fi
+            states+="$key=$value"$'\n' ;;
+        esac
+      done <<< "$metadata"
+      # Retain state and matched categories, never arbitrary service command arguments.
+      PREFLIGHT_SERVICES+="$scope:$unit"$'\n'"$states""ManagerEvidence=$evidence"$'\n'
+      if [[ -n $evidence || ${unit,,} =~ (zram|swap|oom) ]]; then
+        PREFLIGHT_CONFLICT_SERVICES+="$scope:$unit"$'\n'"$states""ManagerEvidence=$evidence"$'\n'
+      fi
+    done
+  done
+}
