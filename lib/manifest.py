@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import time
 import uuid
@@ -79,6 +80,10 @@ SCHEMAS = {
     'snapshot': {'event', 'module', 'path', 'backup', 'before_sha256', 'mode', 'uid', 'gid'},
     'intent': {'event', 'module', 'path', 'before_sha256', 'intended_sha256'},
     'applied': {'event', 'module', 'path', 'applied_sha256'},
+    'service': {'event', 'status', 'module', 'unit', 'scope', 'before_enabled', 'before_active',
+                'applied_enabled', 'applied_active'},
+    'package': {'event', 'module', 'package', 'before_installed', 'applied_installed'},
+    'rollback': {'event', 'operation', 'status'},
 }
 
 
@@ -90,8 +95,31 @@ def validate(event):
     if event['event'] == 'run':
         run_path(event['run_id'])
         return
+    if event['event'] == 'rollback':
+        if (type(event['operation']) is not int or event['operation'] < 1
+                or event['status'] not in ('intent', 'applied')):
+            raise UnsafeState('invalid rollback')
+        return
     if not isinstance(event['module'], str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', event['module']):
         raise UnsafeState('invalid module')
+    if event['event'] == 'service':
+        if (not isinstance(event['unit'], str)
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.@:-]{0,239}\.service', event['unit'])
+                or event['scope'] not in ('system', 'user')
+                or event['status'] not in ('intent', 'applied')):
+            raise UnsafeState('invalid service')
+        for prefix in ('before', 'applied'):
+            if (event[prefix + '_enabled'] not in ('enabled', 'disabled', 'masked', 'static')
+                    or type(event[prefix + '_active']) is not bool):
+                raise UnsafeState('invalid service state')
+        return
+    if event['event'] == 'package':
+        if (not isinstance(event['package'], str)
+                or not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?', event['package'])
+                or type(event['before_installed']) is not bool
+                or type(event['applied_installed']) is not bool):
+            raise UnsafeState('invalid package')
+        return
     valid_path(event['path'])
     for key, value in event.items():
         if key.endswith('sha256'):
@@ -152,7 +180,23 @@ def read_events(fd, run):
         raise UnsafeState('wrong run')
     for event in events:
         validate_context(event, run)
+    rollback_history(events)
     return events
+
+
+def rollback_history(events):
+    progress = {}
+    for index, event in enumerate(events):
+        if event['event'] != 'rollback':
+            continue
+        operation = event['operation']
+        if (operation >= index or events[operation]['event'] not in ('applied', 'service')
+                or (events[operation]['event'] == 'service' and events[operation]['status'] != 'applied')
+                or (progress.get(operation), event['status']) not in
+                ((None, 'intent'), ('intent', 'applied'))):
+            raise UnsafeState('invalid rollback reference or sequence')
+        progress[operation] = event['status']
+    return progress
 
 
 def append_event(fd, event):
@@ -165,18 +209,18 @@ def append_event(fd, event):
 
 
 @contextmanager
-def journal(run):
+def journal(run, writable=True):
     path = run_path(run)
     with parent_fd(path + '/manifest.jsonl') as (parent, name):
         info = os.fstat(parent)
         if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
             raise UnsafeState('unsafe run directory')
-        fd = os.open(name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=parent)
+        fd = os.open(name, (os.O_RDWR if writable else os.O_RDONLY) | os.O_NOFOLLOW, dir_fd=parent)
         try:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
                 raise UnsafeState('unsafe journal')
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            fcntl.flock(fd, fcntl.LOCK_EX if writable else fcntl.LOCK_SH)
             yield fd, read_events(fd, run)
         finally:
             os.close(fd)
@@ -332,12 +376,245 @@ def install_owned_file(run, module, source, target):
                 pass
 
 
+def rollback_operations(events):
+    files, services, packages = {}, {}, {}
+    for index, event in enumerate(events):
+        kind = event['event']
+        if kind in ('snapshot', 'intent', 'applied'):
+            path = event['path']
+            owned_target(path)
+            if kind == 'snapshot':
+                if path in files:
+                    raise UnsafeState('duplicate snapshot')
+                files[path] = {'snapshot': event, 'intent': None, 'applied': None, 'index': index}
+                continue
+            if path not in files or event['module'] != files[path]['snapshot']['module']:
+                raise UnsafeState('unowned operation')
+            record = files[path]
+            if kind == 'intent':
+                expected = (record['applied']['applied_sha256'] if record['applied']
+                            else record['snapshot']['before_sha256'])
+                allowed = {expected}
+                if record['intent']:
+                    allowed.add(record['intent']['intended_sha256'])
+                if event['before_sha256'] not in allowed:
+                    raise UnsafeState('inconsistent intent')
+                record['intent'] = event
+            else:
+                if not record['intent'] or event['applied_sha256'] != record['intent']['intended_sha256']:
+                    raise UnsafeState('unpaired applied operation')
+                record['applied'] = event
+                record['intent'] = None
+            record['index'] = index
+        elif kind == 'service':
+            key = (event['scope'], event['unit'])
+            if key not in services:
+                services[key] = {'first': event, 'last': None, 'pending': None, 'index': index}
+            record = services[key]
+            if event['module'] != record['first']['module']:
+                raise UnsafeState('inconsistent service ownership')
+            if event['status'] == 'intent':
+                if record['pending'] or (record['last'] and service_state(event, 'before')
+                                        != service_state(record['last'], 'applied')):
+                    raise UnsafeState('inconsistent service intent')
+                record['pending'] = event
+            else:
+                if not record['pending'] or event != dict(record['pending'], status='applied'):
+                    raise UnsafeState('unpaired service operation')
+                record['last'], record['pending'] = event, None
+            record['index'] = index
+        elif kind == 'package':
+            packages.setdefault(event['package'], event)
+    operations = [(r['index'], 'file', r) for r in files.values() if r['intent'] or r['applied']]
+    operations.extend((r['index'], 'service', r) for r in services.values())
+    return sorted(operations, key=lambda item: item[0], reverse=True), packages.values()
+
+
+def service_state(event, prefix):
+    return event[prefix + '_enabled'], event[prefix + '_active']
+
+
+def query_service(event):
+    result = subprocess.run(['systemctl', '--' + event['scope'], 'show',
+                             '--property=UnitFileState', '--property=ActiveState', event['unit']],
+                            check=True, capture_output=True, text=True)
+    values = no_duplicates(line.split('=', 1) for line in result.stdout.splitlines())
+    if (set(values) != {'UnitFileState', 'ActiveState'}
+            or values['UnitFileState'] not in ('enabled', 'disabled', 'masked', 'static')
+            or values['ActiveState'] not in ('active', 'inactive')):
+        raise UnsafeState('unknown service state')
+    return values['UnitFileState'], values['ActiveState'] == 'active'
+
+
+def file_identity(info):
+    if info is None:
+        return None
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def manual_file(snapshot):
+    import shlex
+    target = shlex.quote(snapshot['path'])
+    if snapshot['backup']:
+        print('Recuperação manual, após revisar o destino: cp --preserve=mode,ownership,timestamps -- '
+              + shlex.quote(snapshot['backup']) + ' ' + target)
+    else:
+        print('Recuperação manual, após revisar o arquivo criado: rm -- ' + target)
+
+
+def rollback_file(fd, index, record, progress, apply):
+    snapshot = record['snapshot']
+    path = snapshot['path']
+    if record['intent']:
+        print('Interrupção sem confirmação aplicada: ' + path)
+        manual_file(snapshot)
+        return False
+    try:
+        with parent_fd(path) as (parent, name):
+            current, info = read_file(parent, name)
+            restored = digest(current) == snapshot['before_sha256'] and (
+                info is None or (stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
+                == (snapshot['mode'], snapshot['uid'], snapshot['gid']))
+            if progress == 'intent' and restored:
+                print('Restauração já efetuada: ' + path)
+                if apply:
+                    append_event(fd, dict(event='rollback', operation=index, status='applied'))
+                return True
+            if digest(current) != record['applied']['applied_sha256']:
+                print('Conflito: arquivo alterado; ignorado: ' + path)
+                manual_file(snapshot)
+                return False
+            print(('Restaurar: ' if snapshot['backup'] else 'Remover arquivo criado: ') + path)
+            if not apply:
+                return True
+            if progress is None:
+                append_event(fd, dict(event='rollback', operation=index, status='intent'))
+            temp, saved = None, None
+            try:
+                if snapshot['backup']:
+                    with parent_fd(snapshot['backup']) as (backup_parent, backup_name):
+                        original, original_info = read_file(backup_parent, backup_name)
+                    if (digest(original) != snapshot['before_sha256'] or original_info is None
+                            or (stat.S_IMODE(original_info.st_mode), original_info.st_uid, original_info.st_gid)
+                            != (snapshot['mode'], snapshot['uid'], snapshot['gid'])):
+                        raise UnsafeState('backup changed')
+                    temp = '.vaio-rollback-' + uuid.uuid4().hex
+                    saved = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                    0o600, dir_fd=parent)
+                    write_file(saved, original, original_info)
+                checked, checked_info = read_file(parent, name)
+                if digest(checked) != digest(current) or file_identity(checked_info) != file_identity(info):
+                    raise UnsafeState('target changed during rollback')
+                if temp is None:
+                    os.unlink(name, dir_fd=parent)
+                else:
+                    os.replace(temp, name, src_dir_fd=parent, dst_dir_fd=parent)
+                os.fsync(parent)
+            finally:
+                if saved is not None:
+                    os.close(saved)
+                if temp is not None:
+                    try:
+                        os.unlink(temp, dir_fd=parent)
+                    except FileNotFoundError:
+                        pass
+            append_event(fd, dict(event='rollback', operation=index, status='applied'))
+            return True
+    except (OSError, UnsafeState):
+        print('Conflito ou falha de restauração; ignorado: ' + path)
+        manual_file(snapshot)
+        return False
+
+
+def manual_service(event):
+    command = f"systemctl --{event['scope']} "
+    desired = service_state(event, 'before')
+    actions = ['stop'] if not desired[1] else []
+    if desired[0] != 'masked':
+        actions.append('unmask')
+    actions.append({'enabled': 'enable', 'disabled': 'disable',
+                    'masked': 'mask', 'static': 'disable'}[desired[0]])
+    if desired[1]:
+        actions.append('start')
+    for action in actions:
+        print('Recuperação manual, após revisar o serviço: ' + command + action + ' ' + event['unit'])
+
+
+def rollback_service(fd, index, record, progress, apply):
+    first, last = record['first'], record['last']
+    if record['pending']:
+        print('Interrupção sem confirmação aplicada do serviço: ' + first['unit'])
+        manual_service(first)
+        return False
+    current = query_service(last)
+    desired = service_state(first, 'before')
+    if progress == 'intent' and current == desired:
+        if apply:
+            append_event(fd, dict(event='rollback', operation=index, status='applied'))
+        return True
+    if current != service_state(last, 'applied'):
+        print('Conflito: serviço alterado; ignorado: ' + last['unit'])
+        manual_service(first)
+        return False
+    print(f"Restaurar serviço: {last['scope']} {last['unit']} {desired[0]} "
+          + ('active' if desired[1] else 'inactive'))
+    if not apply:
+        return True
+    if progress is None:
+        append_event(fd, dict(event='rollback', operation=index, status='intent'))
+    command = ['systemctl', '--' + last['scope']]
+    actions = []
+    if current[1] and not desired[1]:
+        actions.append('stop')
+    if current[0] != desired[0]:
+        if current[0] == 'masked':
+            actions.append('unmask')
+        if desired[0] == 'static':
+            actions.append('disable')
+        else:
+            actions.append({'enabled': 'enable', 'disabled': 'disable', 'masked': 'mask'}[desired[0]])
+    if desired[1] and not current[1]:
+        actions.append('start')
+    for action in actions:
+        subprocess.run(command + [action, last['unit']], check=True, capture_output=True, text=True)
+    if query_service(last) != desired:
+        raise UnsafeState('service restore did not match before-state')
+    append_event(fd, dict(event='rollback', operation=index, status='applied'))
+    return True
+
+
+def rollback_run(run, apply=False):
+    with journal(run, writable=apply) as (fd, events):
+        operations, packages = rollback_operations(events)
+        progress = rollback_history(events)
+        success = True
+        for index, kind, record in operations:
+            if progress.get(index) == 'applied':
+                continue
+            if kind == 'file':
+                result = rollback_file(fd, index, record, progress.get(index), apply)
+            else:
+                try:
+                    result = rollback_service(fd, index, record, progress.get(index), apply)
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    print('Conflito ou falha de restauração do serviço: ' + record['first']['unit'])
+                    manual_service(record['first'])
+                    result = False
+            success = result and success
+        for package in packages:
+            if not package['before_installed'] and package['applied_installed']:
+                print('Revisão manual de pacote instalado: ' + package['package']
+                      + '; dependências e uso posterior incertos; nenhuma remoção automática.')
+        return success
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('init')
     sub.add_parser('list')
-    for command in ('verify', 'append', 'snapshot', 'install'):
+    for command in ('verify', 'append', 'snapshot', 'install', 'rollback-preview', 'rollback-apply'):
         p = sub.add_parser(command)
         p.add_argument('run')
         if command == 'append':
@@ -357,9 +634,9 @@ def main():
             try:
                 with parent_fd(runs + '/entry') as (parent, _):
                     for run in sorted(os.listdir(parent)):
-                        run_path(run)
                         try:
-                            with journal(run):
+                            run_path(run)
+                            with journal(run, writable=False):
                                 found.append(run)
                         except (OSError, ValueError, TypeError, KeyError):
                             print(f'Aviso: execução inválida ou incompleta ignorada: {run}', file=sys.stderr)
@@ -368,18 +645,21 @@ def main():
                     raise
             print(json.dumps(found))
         elif args.command in ('verify', 'append'):
-            with journal(args.run) as (fd, _):
+            with journal(args.run, writable=args.command == 'append') as (fd, events):
                 if args.command == 'append':
                     event = json.loads(args.event, object_pairs_hook=no_duplicates)
                     if isinstance(event, dict) and event.get('event') == 'run':
                         raise UnsafeState('duplicate run header')
                     validate_context(event, args.run)
+                    rollback_history(events + [event])
                     append_event(fd, event)
         elif args.command == 'snapshot':
             snapshot_file(args.run, args.module, args.path)
         elif args.command == 'install':
             install_owned_file(args.run, args.module, args.path, args.target)
-    except (OSError, ValueError, TypeError, KeyError):
+        elif args.command in ('rollback-preview', 'rollback-apply'):
+            return 0 if rollback_run(args.run, apply=args.command == 'rollback-apply') else 1
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
         print('Erro: estado ou caminho inválido; operação interrompida.', file=sys.stderr)
         return 1
     return 0
