@@ -51,6 +51,34 @@ _memory_has_zram() {
   return 1
 }
 
+_memory_sysctl_file_conflict() {
+  local file=$1 line
+  [[ -f $file ]] || return 1
+  while IFS= read -r line; do
+    if [[ $line =~ ^[[:space:]]*vm\.swappiness[[:space:]]*= ]]; then
+      printf '%s\n' "$file"
+      return 0
+    fi
+  done <"$file"
+  return 1
+}
+
+_memory_sysctl_conflict() {
+  local file
+  local files=(/etc/sysctl.conf /etc/sysctl.d/*.conf /run/sysctl.d/*.conf /usr/local/lib/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf /lib/sysctl.d/*.conf)
+  for file in "${files[@]}"; do
+    [[ $file != /etc/sysctl.d/90-vaio-fe16-swappiness.conf ]] || continue
+    _memory_sysctl_file_conflict "$file" && return 0
+  done
+  return 1
+}
+
+_memory_require_unambiguous_swappiness() {
+  local source
+  source=$(_memory_sysctl_conflict) || return 0
+  _memory_fail "configuração vm.swappiness conflitante em $source; preserve a política atual."
+}
+
 _memory_zram_capable() {
   modprobe -n zram >/dev/null 2>&1 || [[ -d /sys/module/zram ]]
 }
@@ -101,6 +129,10 @@ _memory_conflict() {
   earlyoom)
     [[ $evidence != *earlyoom* && $evidence != *oomd* && $evidence != *nohang* && $evidence != *oom-manager* ]] || {
       _memory_fail 'gerenciador OOM existente; preserve a política atual.'
+      return 1
+    }
+    [[ ! -e /etc/default/earlyoom ]] || {
+      _memory_fail 'configuração earlyoom existente; preserve a política atual.'
       return 1
     }
     ;;
@@ -156,13 +188,14 @@ memory_plan() {
     if [[ $module == zram ]]; then
       [[ ${PREFLIGHT_SWAPS:-} == *$'\t'* ]] || printf 'Aviso: nenhum disk swap detectado; nenhum será criado.\n'
       printf 'zram-tools: ALGO=lz4 PERCENT=50 PRIORITY=100; zramswap.service\n'
-    else printf 'earlyoom: instalação opt-in, sem gerenciador OOM existente.\n'; fi
+    else printf 'earlyoom.service: EARLYOOM_ARGS="-m 10,5 -s 10,5"; SIGTERM/SIGKILL the largest process only below both memory and swap thresholds; may terminate applications.\n'; fi
     ;;
   swappiness)
     _memory_has_zram || {
       _memory_fail 'swappiness exige zram ativo e compatível.'
       return 1
     }
+    _memory_require_unambiguous_swappiness || return 1
     printf 'vm.swappiness=%s\n' "$MEMORY_SWAPPINESS"
     ;;
   esac
@@ -183,10 +216,13 @@ memory_apply() {
     _memory_conflict "$module" || return 1
     _memory_package_contract "$module" || return 1
     ;;
-  swappiness) _memory_has_zram || {
-    _memory_fail 'swappiness exige zram ativo e compatível.'
-    return 1
-  } ;;
+  swappiness)
+    _memory_has_zram || {
+      _memory_fail 'swappiness exige zram ativo e compatível.'
+      return 1
+    }
+    _memory_require_unambiguous_swappiness || return 1
+    ;;
   esac
   case $module in zram)
     unit=zramswap.service
@@ -223,6 +259,7 @@ memory_apply() {
     # cannot start an unreviewed configuration during the APT transaction.
     sudo systemctl mask --runtime "$unit" >/dev/null || return 1
     mask_set=yes
+    # shellcheck disable=SC2034
     APT_MEMORY_MASKED_UNIT=$unit
     python3 "$_MEMORY_LIB/memory_file.py" audit "$run" "$module" masked "{\"enabled\":\"$prior_enabled\",\"active\":\"$prior_active\"}" || {
       [[ $prior_enabled == masked || $prior_enabled == masked-runtime ]] || sudo systemctl unmask --runtime "$unit" >/dev/null || true
@@ -234,6 +271,7 @@ memory_apply() {
     return 1
   }
   apt_apply "$run" "$module" --confirmed "$APT_PLAN_TOKEN" "$package" || result=$?
+  # shellcheck disable=SC2034
   APT_MEMORY_MASKED_UNIT=''
   if ((result)); then
     if [[ $mask_set == yes && $prior_enabled != masked && $prior_enabled != masked-runtime ]]; then sudo systemctl unmask --runtime "$unit" >/dev/null || true; fi
@@ -241,10 +279,16 @@ memory_apply() {
   fi
   if [[ $module == zram ]]; then
     config=$'ALGO=lz4\nPERCENT=50\nPRIORITY=100\n'
-    printf '%s' "$config" | python3 "$_MEMORY_LIB/memory_file.py" install "$run" zram || {
+  elif [[ $module == earlyoom ]]; then
+    config=$'EARLYOOM_ARGS="-m 10,5 -s 10,5"\n'
+  fi
+  if [[ $module == zram || $module == earlyoom ]]; then
+    printf '%s' "$config" | python3 "$_MEMORY_LIB/memory_file.py" install "$run" "$module" || {
       [[ $prior_enabled == masked || $prior_enabled == masked-runtime ]] || sudo systemctl unmask --runtime "$unit" >/dev/null || true
       return 1
     }
+  fi
+  if [[ $module == zram ]]; then
     python3 "$_MEMORY_LIB/memory_file.py" audit "$run" zram activating '{"unit":"zramswap.service"}' || {
       [[ $prior_enabled == masked || $prior_enabled == masked-runtime ]] || sudo systemctl unmask --runtime "$unit" >/dev/null || true
       return 1
