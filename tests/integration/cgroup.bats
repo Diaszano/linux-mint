@@ -3,9 +3,13 @@ setup() {
     [[ $(hostname) == vaio-fe16-test-vm && $(cat /proc/1/comm) == systemd ]] || skip 'Run only in the disposable Noble QEMU VM'
     ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
     export ROOT WORK="$BATS_TEST_TMPDIR"
+    chmod 700 "$WORK" "$(dirname "$WORK")"
 }
 
 teardown() {
+    if [[ -n ${untrusted_parent:-} ]]; then
+        sudo chown "$(id -u)" "$untrusted_parent"
+    fi
     if [[ -n ${TEST_SLICE:-} ]]; then
         systemctl --user stop "$TEST_SLICE"
         systemctl --user revert "$TEST_SLICE" >/dev/null 2>&1 || true
@@ -169,4 +173,18 @@ PYTHON
     [ "$result" = 0 ]
     [[ "$output" == *'bounded pressure'* ]]
     [ -r /proc/self/status ]
+}
+
+@test "a runtime path owned by another UID is rejected even with private owned leaf" {
+    untrusted_parent="$WORK/foreign"
+    mkdir -p "$untrusted_parent/runtime"
+    chmod 755 "$untrusted_parent"
+    chmod 700 "$untrusted_parent/runtime"
+    sudo chown 65534 "$untrusted_parent"
+    export XDG_RUNTIME_DIR="$untrusted_parent/runtime"
+    run "$ROOT/bin/dev-run" heavy touch "$WORK/sentinel"
+    [ "$status" != 0 ]
+    [[ "$output" == *"Unsafe runtime path owner: $untrusted_parent"* ]]
+    [ ! -e "$WORK/sentinel" ]
+    [ -z "$(find "$XDG_RUNTIME_DIR" -mindepth 1 -print -quit)" ]
 }

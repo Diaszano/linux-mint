@@ -51,7 +51,24 @@ max=$((max * 1024 * mem_kb / 23068672 * 1048576))
 swap=$((swap * 1024 * mem_kb / 23068672 * 1048576))
 ((cpu > 0 && high > 0 && high < max && tasks > 0)) || fail 'Adapted limits cannot sustain a workload'
 [[ $profile != emulator ]] || ((max > 3221225472)) || fail 'Adapted emulator cap cannot sustain the 3-GiB guest'
-[[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR && -O $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]] || fail 'XDG_RUNTIME_DIR must be an owned writable directory'
+[[ -n ${XDG_RUNTIME_DIR:-} ]] || fail 'XDG_RUNTIME_DIR must be an owned writable directory'
+runtime_root=$(realpath -e -- "$XDG_RUNTIME_DIR") || fail 'Cannot resolve XDG_RUNTIME_DIR'
+[[ -d $runtime_root && -O $runtime_root && -w $runtime_root ]] || fail 'XDG_RUNTIME_DIR must be an owned writable directory'
+runtime_uid=$(id -u)
+runtime_path=$runtime_root
+# Protect every pathname component against renaming by another UID.
+while :; do
+    runtime_stat=$(stat -Lc '%u %a' -- "$runtime_path") || fail 'Cannot inspect runtime path'
+    read -r runtime_owner runtime_mode <<<"$runtime_stat"
+    [[ $runtime_owner == "$runtime_uid" || $runtime_owner == 0 ]] || fail "Unsafe runtime path owner: $runtime_path"
+    [[ $runtime_mode =~ ^[0-7]{1,4}$ ]] || fail 'Invalid runtime path mode'
+    runtime_mode=$((8#$runtime_mode))
+    (((runtime_mode & 0022) == 0 || (runtime_mode & 01000) != 0)) || fail "Unsafe runtime path permissions: $runtime_path"
+    [[ $runtime_path == / ]] && break
+    runtime_path=${runtime_path%/*}
+    [[ -n $runtime_path ]] || runtime_path=/
+done
+XDG_RUNTIME_DIR=$runtime_root
 for tool in systemd-run systemctl timeout setsid nice ionice; do
     command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
 done

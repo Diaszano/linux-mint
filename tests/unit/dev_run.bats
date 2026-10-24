@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 setup() {
     ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+    chmod 700 "$BATS_TEST_TMPDIR" "$(dirname "$BATS_TEST_TMPDIR")"
     export HOME="$BATS_TEST_TMPDIR/home" XDG_RUNTIME_DIR="$BATS_TEST_TMPDIR/runtime"
     export FIXTURE="$BATS_TEST_TMPDIR" PATH="$BATS_TEST_TMPDIR/bin:$PATH"
     mkdir -p "$HOME" "$XDG_RUNTIME_DIR" "$FIXTURE/bin"
@@ -210,4 +211,50 @@ SH
 @test "payload self termination returns its signal status" {
     run "$ROOT/bin/dev-run" heavy bash -c 'kill -TERM $$'
     [ "$status" = 143 ]
+}
+
+@test "non-sticky group or world writable runtime directories refuse before launching a scope" {
+    for mode in 0770 0707 0777; do
+        chmod "$mode" "$XDG_RUNTIME_DIR"
+        run "$ROOT/bin/dev-run" heavy touch "$FIXTURE/sentinel"
+        [ "$status" != 0 ]
+        [ ! -e "$FIXTURE/sentinel" ]
+        [ ! -e "$FIXTURE/request" ]
+    done
+}
+
+@test "an unsafe writable ancestor cannot hide behind a private runtime leaf" {
+    mkdir -p "$FIXTURE/shared/runtime"
+    chmod 777 "$FIXTURE/shared"
+    chmod 700 "$FIXTURE/shared/runtime"
+    export XDG_RUNTIME_DIR="$FIXTURE/shared/runtime"
+    run "$ROOT/bin/dev-run" heavy touch "$FIXTURE/sentinel"
+    [ "$status" != 0 ]
+    [ ! -e "$FIXTURE/sentinel" ]
+    [ ! -e "$FIXTURE/request" ]
+}
+
+@test "sticky shared runtime directories protect the private IPC entry" {
+    chmod 1777 "$XDG_RUNTIME_DIR"
+    run "$ROOT/bin/dev-run" heavy true
+    [ "$status" = 0 ]
+    [ -z "$(find "$XDG_RUNTIME_DIR" -mindepth 1 -print -quit)" ]
+}
+
+@test "runtime aliases use a canonical path with safe ancestors" {
+    mkdir -p "$FIXTURE/shared"
+    chmod 777 "$FIXTURE/shared"
+    ln -s "$FIXTURE/shared" "$FIXTURE/alias"
+    mkdir "$FIXTURE/shared/runtime"
+    chmod 700 "$FIXTURE/shared/runtime"
+    export XDG_RUNTIME_DIR="$FIXTURE/alias/runtime"
+    run "$ROOT/bin/dev-run" heavy touch "$FIXTURE/sentinel"
+    [ "$status" != 0 ]
+    [ ! -e "$FIXTURE/sentinel" ]
+    [ ! -e "$FIXTURE/request" ]
+    chmod 700 "$FIXTURE/shared"
+    run "$ROOT/bin/dev-run" heavy true
+    [ "$status" = 0 ]
+    grep -Fq "$FIXTURE/shared/runtime/dev-run." "$FIXTURE/request"
+    ! grep -Fq "$FIXTURE/alias/" "$FIXTURE/request"
 }
