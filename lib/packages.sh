@@ -43,7 +43,7 @@ _apt_installed() {
 _apt_memory_manager() {
   case "${1%%:*}" in
     *zram* | *zswap* | systemd-swap | swapspace | dphys-swapfile) printf 'zram\n' ;;
-    *oom* | nohang | low-memory-monitor) printf 'earlyoom\n' ;;
+    earlyoom | systemd-oomd | oomd | nohang | low-memory-monitor) printf 'earlyoom\n' ;;
     *) printf 'none\n' ;;
   esac
 }

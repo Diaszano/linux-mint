@@ -314,3 +314,41 @@ assert not [event for event in events if event["event"] == "package"]
 PY
   [ "$status" = 0 ]
 }
+
+@test "fix-round-2 installed zoom and foomatic-db do not conflict with earlyoom" {
+  printf 'zoom\tinstall ok installed\t1.0\nfoomatic-db\tinstall ok installed\t1.0\n' >>"$FIXTURE/packages"
+  run library 'apt_plan earlyoom earlyoom'
+  [ "$status" = 0 ]
+  [[ "$output" == *missing=earlyoom* ]]
+  [[ "$(cat "$PACKAGE_LOG")" == *--simulate* ]]
+}
+
+@test "fix-round-2 zoom and foomatic-db requests and dependencies are allowed" {
+  for package in zoom foomatic-db; do
+    run library "apt_plan baseline $package"
+    [ "$status" = 0 ]
+    [[ "$output" == *"missing=$package"* ]]
+    printf 'Inst %s (1.0 Ubuntu)\n' "$package" >"$FIXTURE/simulation"
+    run library 'apt_plan baseline hello'
+    [ "$status" = 0 ]
+    [[ "$output" == *missing=hello* ]]
+  done
+}
+
+@test "fix-round-2 known OOM managers remain blocked in all package contexts" {
+  for package in earlyoom systemd-oomd oomd nohang low-memory-monitor; do
+    run library "apt_plan baseline $package"
+    [ "$status" != 0 ]
+    [ ! -e "$PACKAGE_LOG" ]
+    printf 'Inst %s (1.0 Ubuntu)\n' "$package" >"$FIXTURE/simulation"
+    run library 'apt_plan baseline hello'
+    [ "$status" != 0 ]
+    [[ "$output" == *gerenciador* ]]
+    rm "$PACKAGE_LOG"
+    printf '%s\tinstall ok installed\t1.0\n' "$package" >"$FIXTURE/packages"
+    run library 'apt_plan earlyoom earlyoom'
+    [ "$status" != 0 ]
+    [ ! -e "$PACKAGE_LOG" ]
+    printf 'bash\tinstall ok installed\t5.2\n' >"$FIXTURE/packages"
+  done
+}
