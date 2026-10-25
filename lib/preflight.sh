@@ -202,3 +202,211 @@ preflight_install_inventory() {
     done
   done
 }
+
+_preflight_doctor_fact() {
+  local component=$1 field=$2 value=$3
+  value=${value//$'\t'/ }
+  value=${value//$'\r'/ }
+  value=${value//$'\n'/ }
+  printf '%s\t%s\t%s\n' "$component" "$field" "$value"
+}
+
+preflight_doctor_facts() {
+  local release key value os_id='' os_version='' codename='' arch threads memory cpu_model controllers virt='none'
+  local swaps='' zram='' kvm_access=no kvm_ok='NOT INSTALLED' emulator='NOT INSTALLED' sdk renderer='NOT INSTALLED'
+  local temperature='NOT INSTALLED' power='NOT INSTALLED' gradle mise docker_info='NOT INSTALLED' runs
+  local status path field online swappiness page_cluster temperature_status power_profile_status power_supply_status power_supply
+
+  if release=$(cat /etc/os-release 2>/dev/null); then
+    while IFS='=' read -r key value; do
+      value=${value#\"}
+      value=${value%\"}
+      case $key in
+        ID) os_id=$value ;;
+        VERSION_ID) os_version=$value ;;
+        UBUNTU_CODENAME) codename=$value ;;
+      esac
+    done <<<"$release"
+  fi
+  arch=$(uname -m 2>/dev/null || echo unknown)
+  threads=$(nproc 2>/dev/null || echo unknown)
+  memory=$(awk '$1 == "MemTotal:" {print $2; exit}' /proc/meminfo 2>/dev/null || true)
+  cpu_model=$(awk -F: '$1 ~ /^[[:space:]]*model name[[:space:]]*$/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null || true)
+  if [[ $os_id == linuxmint && $os_version =~ ^22([.]|$) && $codename == noble && $arch == x86_64 ]]; then
+    status=PASS
+  else
+    status=WARN
+  fi
+  _preflight_doctor_fact host status "$status"
+  _preflight_doctor_fact host os_id "${os_id:-unknown}"
+  _preflight_doctor_fact host os_version "${os_version:-unknown}"
+  _preflight_doctor_fact host ubuntu_codename "${codename:-unknown}"
+  _preflight_doctor_fact host architecture "$arch"
+  _preflight_doctor_fact host cpu_threads "$threads"
+  _preflight_doctor_fact host cpu_model "${cpu_model:-unknown}"
+  _preflight_doctor_fact host memory_total_kb "${memory:-unknown}"
+
+  if command -v swapon >/dev/null 2>&1 && swaps=$(swapon --show --noheadings --raw --output NAME,TYPE,SIZE,PRIO 2>/dev/null); then
+    [[ -n $swaps ]] && status=PASS || status=WARN
+  else
+    swaps='unknown'
+    status=WARN
+  fi
+  _preflight_doctor_fact swap status "$status"
+  _preflight_doctor_fact swap devices "${swaps:-none}"
+  IFS= read -r swappiness </proc/sys/vm/swappiness 2>/dev/null || swappiness=unknown
+  IFS= read -r page_cluster </proc/sys/vm/page-cluster 2>/dev/null || page_cluster=unknown
+  _preflight_doctor_fact swap vm_swappiness "$swappiness"
+  _preflight_doctor_fact swap vm_page_cluster "$page_cluster"
+
+  zram_managers=()
+  if command -v dpkg-query >/dev/null 2>&1; then
+    local package package_status
+    for package in zram-tools systemd-zram-generator; do
+      package_status=$(dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null || true)
+      [[ $package_status == installed ]] && zram_managers+=("$package")
+    done
+  fi
+  if command -v zramctl >/dev/null 2>&1 && zram=$(zramctl --noheadings --raw --output NAME,DISKSIZE 2>/dev/null); then
+    if [[ -n $zram ]]; then
+      status=PASS
+    elif ((${#zram_managers[@]})); then
+      status=WARN
+    else
+      status='NOT INSTALLED'
+    fi
+  else
+    zram='unavailable'
+    if ((${#zram_managers[@]})); then status=WARN; else status='NOT INSTALLED'; fi
+  fi
+  _preflight_doctor_fact zram status "$status"
+  _preflight_doctor_fact zram devices "${zram:-none}"
+  _preflight_doctor_fact zram manager_packages "${zram_managers[*]:-none}"
+
+  if [[ $(grep -E -m1 -o '(^|[[:space:]])(svm|vmx)([[:space:]]|$)' /proc/cpuinfo 2>/dev/null | tr -d ' ' || true) =~ (svm|vmx) ]]; then
+    virt=${BASH_REMATCH[1]}
+  fi
+  [[ -r /dev/kvm && -w /dev/kvm ]] && kvm_access=yes
+  command -v kvm-ok >/dev/null 2>&1 && { kvm-ok >/dev/null 2>&1 && kvm_ok=PASS || kvm_ok=FAIL; }
+  sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
+  if [[ -n $sdk && -x $sdk/emulator/emulator ]]; then
+    emulator=$sdk/emulator/emulator
+  elif command -v emulator >/dev/null 2>&1; then
+    emulator=$(command -v emulator)
+  fi
+  if [[ $emulator != 'NOT INSTALLED' ]]; then
+    "$emulator" -accel-check >/dev/null 2>&1 && emulator=PASS || emulator=FAIL
+  fi
+  if [[ $virt != none && $kvm_access == yes && $kvm_ok == PASS && $emulator == PASS ]]; then
+    status=PASS
+  elif [[ $virt == none || $kvm_access == no || $kvm_ok == FAIL || $emulator == FAIL ]]; then
+    status=FAIL
+  else
+    status='NOT INSTALLED'
+  fi
+  _preflight_doctor_fact kvm status "$status"
+  _preflight_doctor_fact kvm cpu_virtualization "$virt"
+  _preflight_doctor_fact kvm device_access "$kvm_access"
+  _preflight_doctor_fact kvm kvm_ok "$kvm_ok"
+  _preflight_doctor_fact kvm emulator_accel_check "$emulator"
+  _preflight_doctor_fact kvm manual 'Enable AMD-V/SVM in UEFI and grant the user access to /dev/kvm; install the official Android Emulator and rerun -accel-check.'
+
+  if command -v glxinfo >/dev/null 2>&1; then
+    renderer=$(glxinfo -B 2>/dev/null | sed -n 's/^[[:space:]]*OpenGL renderer string: //p' | head -n 1)
+    [[ -n $renderer ]] && status=PASS || { renderer=unavailable; status=WARN; }
+  else
+    status='NOT INSTALLED'
+  fi
+  _preflight_doctor_fact mesa status "$status"
+  _preflight_doctor_fact mesa renderer "$renderer"
+
+  temperature_status='NOT INSTALLED'
+  power_profile_status='NOT INSTALLED'
+  power_supply_status='NOT INSTALLED'
+  power_supply='none'
+  if command -v sensors >/dev/null 2>&1; then
+    temperature=$(sensors 2>/dev/null | head -n 4 | tr '\n' ' ')
+    [[ -n $temperature ]] && temperature_status=PASS || temperature_status=WARN
+  fi
+  if command -v powerprofilesctl >/dev/null 2>&1; then
+    power=$(powerprofilesctl get 2>/dev/null || true)
+    [[ -n $power ]] && power_profile_status=PASS || { power=unavailable; power_profile_status=WARN; }
+  fi
+  shopt -s nullglob
+  for path in /sys/class/power_supply/*/online; do
+    field=${path%/*}
+    field=${field##*/}
+    IFS= read -r online <"$path" 2>/dev/null || online=unknown
+    power_supply+=" $field=$online"
+    power_supply_status=PASS
+  done
+  shopt -u nullglob
+  if [[ $temperature_status == PASS && ( $power_profile_status == PASS || $power_supply_status == PASS ) ]]; then
+    status=PASS
+  elif [[ $temperature_status == 'NOT INSTALLED' && $power_profile_status == 'NOT INSTALLED' && $power_supply_status == 'NOT INSTALLED' ]]; then
+    status='NOT INSTALLED'
+  else
+    status=WARN
+  fi
+  _preflight_doctor_fact thermal_power status "$status"
+  _preflight_doctor_fact thermal_power temperature_status "$temperature_status"
+  _preflight_doctor_fact thermal_power sensors "$temperature"
+  _preflight_doctor_fact thermal_power power_profile_status "$power_profile_status"
+  _preflight_doctor_fact thermal_power power "$power"
+  _preflight_doctor_fact thermal_power power_supply_status "$power_supply_status"
+  _preflight_doctor_fact thermal_power power_supply "$power_supply"
+
+  controllers=$(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo unavailable)
+  if [[ " $controllers " == *' cpu '* && " $controllers " == *' memory '* && " $controllers " == *' pids '* ]]; then
+    status=PASS
+  else
+    status=WARN
+  fi
+  _preflight_doctor_fact cgroup_controllers status "$status"
+  _preflight_doctor_fact cgroup_controllers available "$controllers"
+
+  gradle=$(command -v gradle 2>/dev/null || true)
+  [[ -n $gradle ]] && status=PASS || { gradle='NOT INSTALLED'; status='NOT INSTALLED'; }
+  _preflight_doctor_fact gradle status "$status"
+  _preflight_doctor_fact gradle path "$gradle"
+
+  mise=$(command -v mise 2>/dev/null || true)
+  [[ -n $mise ]] || [[ ! -x $HOME/.local/bin/mise ]] || mise=$HOME/.local/bin/mise
+  [[ -n $mise ]] && status=PASS || { mise='NOT INSTALLED'; status='NOT INSTALLED'; }
+  _preflight_doctor_fact mise status "$status"
+  _preflight_doctor_fact mise path "$mise"
+
+  if [[ -n $sdk && -d $sdk ]]; then
+    status=PASS
+  elif [[ -n $sdk ]]; then
+    status=WARN
+  else
+    sdk='NOT INSTALLED'
+    status='NOT INSTALLED'
+  fi
+  _preflight_doctor_fact sdk status "$status"
+  _preflight_doctor_fact sdk path "$sdk"
+
+  if command -v docker >/dev/null 2>&1; then
+    if docker_info=$(docker info --format '{{.CgroupDriver}}|{{.CgroupVersion}}|{{json .SecurityOptions}}' 2>/dev/null); then
+      status=PASS
+    else
+      docker_info='engine unavailable'
+      status=WARN
+    fi
+  else
+    docker_info='NOT INSTALLED'
+    status='NOT INSTALLED'
+  fi
+  _preflight_doctor_fact docker status "$status"
+  _preflight_doctor_fact docker info "$docker_info"
+
+  if runs=$(PYTHONDONTWRITEBYTECODE=1 python3 "$(dirname "${BASH_SOURCE[0]}")/manifest.py" list 2>/dev/null); then
+    status=PASS
+  else
+    runs='unavailable'
+    status=WARN
+  fi
+  _preflight_doctor_fact run_manifest status "$status"
+  _preflight_doctor_fact run_manifest runs "$runs"
+}

@@ -232,10 +232,10 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** dev-doctor prints Portuguese PASS/WARN/FAIL/NOT INSTALLED and optional --json with stable keys for host, swap, zram, KVM, Mesa, thermal/power, cgroup controllers, Gradle, mise, SDK, Docker and run manifest. It never runs a mutating command.
 
-- [ ] **Step 1: Write failing tests.** Assert doctor does not call sudo/APT or write files, distinguishes not tested from PASS, produces parseable stable JSON and reports VM sysctls without changing them. An unavailable KVM check remains NOT INSTALLED or FAIL with a manual next step.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/dev_doctor.bats. Expected: FAIL for the absent command.
-- [ ] **Step 3: Implement read-only reporting.** Reuse preflight facts, query installed tool paths and manifest entries as data, omit secrets and never call a probe that modifies state.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/dev_doctor.bats && bash -n bin/dev-doctor && bin/dev-doctor --json | python3 -m json.tool. Expected: tests PASS, syntax exit 0 and parseable JSON; on a non-Mint development machine, doctor reports unsupported/NOT INSTALLED without modifying it.
+- [x] **Step 1: Write failing tests.** Assert doctor does not call sudo/APT or write files, distinguishes not tested from PASS, produces parseable stable JSON and reports VM sysctls without changing them. An unavailable KVM check remains NOT INSTALLED or FAIL with a manual next step.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/dev_doctor.bats. Expected: FAIL for the absent command. A follow-up zram manager test also failed because an installed manager with no active device was reported as NOT INSTALLED.
+- [x] **Step 3: Implement read-only reporting.** Reuse preflight facts, query installed tool paths and manifest entries as data, omit secrets and never call a probe that modifies state.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/dev_doctor.bats && bash -n bin/dev-doctor && bin/dev-doctor --json | python3 -m json.tool. Expected: tests PASS, syntax exit 0 and parseable JSON; on a non-Mint development machine, doctor reports unsupported/NOT INSTALLED without modifying it. Full unit and disposable VM integration evidence is in the Task 13 report.
 - [ ] **Step 5: Commit.** git add bin/dev-doctor lib/preflight.sh tests/unit/dev_doctor.bats; git commit -m "feat: add read-only workstation diagnostics"
 
 ### Task 14: Validated user profile selection
