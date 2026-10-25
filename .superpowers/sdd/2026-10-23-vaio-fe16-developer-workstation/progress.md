@@ -123,3 +123,9 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - Final focused doctor suite: 9/9 passed. Full sequential Bats unit suite: 173/173 passed; Python unit suite: 19/19 passed.
 - Final integration suite in the disposable VM: 18 total, 14 passed and 4 skipped (Docker and Gradle unavailable). Static checks, JSON parsing, and legacy fixture hashes passed. Full details are in `task-13-report.md`.
 - No physical notebook installation, tuning, or acceptance testing was performed. Hardware-dependent KVM, SDK/AVD, Gradle, and performance behavior remain unverified.
+
+## Task 14 status
+- Implementation and focused tests are committed as `feat: validate selectable workload profiles`; independent review is pending. Task 14 exposes only the balanced preset and preserves build/emulator/heavy as the workload argument. The shared parser lives in `lib/profiles.sh`; this clarifies the approved plan file map.
+- TDD RED: new CLI tests failed while `bin/dev-profile` was absent; rejection assertions verify specific diagnostics. Focused disposable VM tests passed 26/26.
+- Full sequential disposable VM verification passed: 181 Bats unit tests, 19 Python manifest tests, and 18 integration tests (14 pass, 4 environment skips). Bash syntax and warning-level ShellCheck passed; host `git diff --check` passed. All seven legacy fixture hashes passed.
+- No legacy files or physical VAIO settings changed. No hardware acceptance or performance claim. Full evidence: `task-14-report.md`.

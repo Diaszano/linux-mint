@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/profiles.sh
+source "$ROOT/lib/profiles.sh"
 fail() {
     printf 'dev-run: %s\n' "$*" >&2
     exit 1
@@ -14,35 +16,26 @@ if [[ ${DEV_LIMITS_DISABLED:-0} == 1 ]]; then
     exec "$@"
 fi
 
-# Profile rows are data, including the optional private user override.
-profiles=$ROOT/config/profiles.conf
-user_profiles=${XDG_CONFIG_HOME:-$HOME/.config}/vaio-dev/profiles.conf
-if [[ -e $user_profiles || -L $user_profiles ]]; then
-    [[ -f $user_profiles && ! -L $user_profiles && -O $user_profiles ]] || fail 'Invalid user profile file'
-    [[ $(stat -c %a -- "$user_profiles") == 600 ]] || fail 'User profiles must have mode 0600'
-    profiles=$user_profiles
-fi
-number() { [[ $1 =~ ^(0|[1-9][0-9]{0,11})$ ]]; }
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+profile_choice_read "$config_home/vaio-dev/profile" || fail 'Invalid user profile choice'
+[[ $PROFILE_CHOICE == balanced ]] || fail 'Unsupported resource preset'
+profiles=$(profile_table_path "$ROOT") || fail 'Invalid user profile file'
+profile_load_table "$profiles" || fail 'Malformed workload profile table'
 found=0
-declare -A seen=()
-while IFS= read -r row || [[ -n $row ]]; do
-    [[ -n $row && $row != \#* ]] || continue
-    [[ $row =~ ^(build|emulator|heavy)$'\t'([1-9][0-9]{0,2})$'\t'([1-9][0-9]?)$'\t'([1-9][0-9]?)$'\t'(0|[1-9][0-9]?)$'\t'([1-9][0-9]{0,3})$ ]] || fail 'Malformed profile row'
+selected=()
+for row in "${PROFILE_ROWS[@]}"; do
     IFS=$'\t' read -r name cpu high max swap tasks <<<"$row"
-    [[ ! ${seen[$name]:-} ]] || fail 'Duplicate profile row'
-    seen[$name]=1
-    ((high < max && cpu <= 800 && max <= 22 && swap <= 22 && tasks <= 4096)) || fail 'Invalid profile bounds'
     if [[ $name == "$profile" ]]; then
         selected=("$cpu" "$high" "$max" "$swap" "$tasks")
         found=1
     fi
-done <"$profiles"
+done
 ((found)) || fail 'Workload missing from profile table'
 read -r cpu high max swap tasks <<<"${selected[*]}"
 mem_kb=$(awk '$1 == "MemTotal:" {print $2}' < <(cat /proc/meminfo))
-number "$mem_kb" && ((mem_kb > 0)) || fail 'Cannot discover RAM'
+profile_number "$mem_kb" && ((mem_kb > 0)) || fail 'Cannot discover RAM'
 threads=$(nproc)
-number "$threads" && ((threads > 0)) || fail 'Cannot discover available CPU threads'
+profile_number "$threads" && ((threads > 0)) || fail 'Cannot discover available CPU threads'
 cpu_cap=$(((threads > 2 ? threads - 2 : 1) * 100))
 ((cpu <= cpu_cap)) || cpu=$cpu_cap
 ((mem_kb <= 23068672)) || mem_kb=23068672
@@ -160,11 +153,11 @@ while [[ -n $path ]]; do
     [[ $path != "$cgroup" ]] || own=1
     value=$(cat "/sys/fs/cgroup$path/cpu.max") || fail 'Missing cpu.max'
     read -r quota period extra <<<"$value"
-    number "${period:-}" && ((period > 0 && period <= 1000000)) && [[ -z ${extra:-} ]] || fail 'Invalid CPU period'
+    profile_number "${period:-}" && ((period > 0 && period <= 1000000)) && [[ -z ${extra:-} ]] || fail 'Invalid CPU period'
     if [[ $quota == max ]]; then
         ((own == 0)) || fail 'Unbounded cpu.max'
     else
-        number "$quota" && ((quota > 0)) || fail 'Invalid CPU quota'
+        profile_number "$quota" && ((quota > 0)) || fail 'Invalid CPU quota'
         ((own == 0 || quota * 100 <= cpu * period)) || fail 'Ineffective CPU ratio'
         if ((effective_cpu_quota == 0 || quota * effective_cpu_period < effective_cpu_quota * period)); then
             effective_cpu_quota=$quota
@@ -195,7 +188,7 @@ while [[ -n $path ]]; do
             ((own == 0)) || fail "Unbounded $control"
             continue
         fi
-        number "$value" || fail "Invalid $control"
+        profile_number "$value" || fail "Invalid $control"
         ((own == 0 || value <= bound)) || fail "Ineffective $control"
         ((value >= ${!effective})) || printf -v "$effective" '%s' "$value"
     done

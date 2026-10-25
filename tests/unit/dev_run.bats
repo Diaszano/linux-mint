@@ -258,3 +258,24 @@ SH
     grep -Fq "$FIXTURE/shared/runtime/dev-run." "$FIXTURE/request"
     ! grep -Fq "$FIXTURE/alias/" "$FIXTURE/request"
 }
+
+@test "balanced choice is read by future dev-run scopes only" {
+    mkdir -p "$HOME/.config/vaio-dev"
+    printf 'balanced\n' >"$HOME/.config/vaio-dev/profile"
+    chmod 600 "$HOME/.config/vaio-dev/profile"
+    run "$ROOT/bin/dev-run" build true
+    [ "$status" = 0 ]
+    grep -Fq 'CPUQuota=800%' "$FIXTURE/request"
+    grep -Fq 'MemoryMax=9663676416' "$FIXTURE/request"
+}
+
+@test "invalid selected preset stops before creating a workload scope" {
+    mkdir -p "$HOME/.config/vaio-dev"
+    printf 'throughput\n' >"$HOME/.config/vaio-dev/profile"
+    chmod 600 "$HOME/.config/vaio-dev/profile"
+    run "$ROOT/bin/dev-run" build touch "$FIXTURE/sentinel"
+    [ "$status" != 0 ]
+    [[ "$output" == *"Invalid user profile choice"* ]]
+    [ ! -e "$FIXTURE/request" ]
+    [ ! -e "$FIXTURE/sentinel" ]
+}
