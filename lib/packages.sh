@@ -58,7 +58,7 @@ _apt_memory_manager() {
 }
 
 _apt_barrier() {
-  local module=$1 package status evidence device type size priority extra service_line skip_line=no
+  local module=$1 package status evidence device type size priority extra service_line skip_line=no requested=none candidate
   preflight_install_inventory || {
     printf 'Erro: inventário de pacotes, swap ou serviços indeterminado.\n' >&2
     return 1
@@ -126,6 +126,25 @@ _apt_barrier() {
   if [[ $module == docker && $ce == yes && $distro == yes ]]; then
     printf 'Erro: provedores Docker CE e distro em conflito.\n' >&2
     return 1
+  fi
+  for package in "$@"; do
+    case "$package" in
+      docker.io | docker-compose-v2 | containerd | runc) candidate=distro ;;
+      docker-ce | docker-ce-cli | containerd.io | docker-compose-plugin | docker-buildx-plugin) candidate=ce ;;
+      *) continue ;;
+    esac
+    if [[ $requested != none && $requested != "$candidate" ]]; then
+      printf 'Error: requested Docker packages mix providers.\n' >&2
+      return 1
+    fi
+    requested=$candidate
+  done
+  if [[ $module == docker && $requested != none ]]; then
+    if [[ $APT_DOCKER_PROVIDER != none && $APT_DOCKER_PROVIDER != "$requested" ]]; then
+      printf 'Error: requested Docker provider conflicts with the installed provider.\n' >&2
+      return 1
+    fi
+    APT_DOCKER_PROVIDER=$requested
   fi
   shift
   for package in "$@"; do

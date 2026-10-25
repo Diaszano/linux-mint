@@ -38,14 +38,26 @@ dpkg-query)
     *) echo 'unknown ok not-installed' ;;
   esac ;;
   systemctl)
+    case "$*" in
+      *docker.service*|*docker.socket*) printf 'LoadState=not-found\nUnitFileState=disabled\nActiveState=inactive\n'; exit 0 ;;
+    esac
     case "${1:-}" in --system|--user) shift ;; esac
-    case "${1:-}" in
-      is-active) echo inactive; exit 3 ;;
-      list-units|list-unit-files) exit 0 ;;
+      case "$*" in
+        is-active*) echo inactive; exit 3 ;;
+        *list-units*|*list-unit-files*) exit 0 ;;
+      *show*) echo "systemctl $*" >>"$PROBE_LOG"; exit 99 ;;
       *) echo "systemctl $*" >>"$PROBE_LOG"; exit 99 ;;
     esac ;;
   swapon|zramctl) : ;;
-  sudo|apt-get|tee) echo "$*" >>"$PROBE_LOG"; exit 99 ;;
+  apt-get)
+    case "$*" in
+    *--simulate*)
+      printf 'Inst docker.io (26.1 Ubuntu:24.04/noble [amd64])\nInst docker-compose-v2 (2.27 Ubuntu:24.04/noble [amd64])\n'
+      exit 0
+      ;;
+    esac
+    echo "$*" >>"$PROBE_LOG"; exit 99 ;;
+  sudo|tee) echo "$*" >>"$PROBE_LOG"; exit 99 ;;
 esac
 EOF
   chmod +x "$BATS_TEST_TMPDIR/bin/cat" "$BATS_TEST_TMPDIR/bin/probe"
@@ -67,6 +79,12 @@ EOF
   run systemctl --user start earlyoom.service
   [ "$status" -eq 99 ]
   [[ "$(cat "$PROBE_LOG")" == 'systemctl start earlyoom.service' ]]
+}
+
+@test "systemctl stub reports an absent Docker service" {
+    run systemctl --system show docker.service --property=LoadState
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'LoadState=not-found'* ]]
 }
 
 assert_read_only() {

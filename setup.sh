@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/lib/preflight.sh"
 source "$SCRIPT_DIR/lib/packages.sh"
 source "$SCRIPT_DIR/lib/memory.sh"
 source "$SCRIPT_DIR/lib/gradle.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
 
 usage() {
   cat <<'EOF'
@@ -106,6 +107,7 @@ if [[ -v selected[zram] ]]; then memory_plan --zram || exit 1; fi
 if [[ -v selected[earlyoom] ]]; then memory_plan --earlyoom || exit 1; fi
 if [[ -v selected[swappiness] ]]; then memory_plan --swappiness "$swappiness" || exit 1; fi
 if [[ -v selected[gradle-global] ]]; then gradle_plan --global || exit 1; fi
+if [[ -v selected[docker] ]]; then docker_plan || exit 1; fi
 
 printf 'Prévia de operações (nenhuma alteração será feita):\n'
 for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swappiness; do
@@ -122,7 +124,7 @@ for module in baseline kvm mise wrappers zram docker earlyoom gradle-global swap
     mise) printf 'file=%s/.local/bin/mise\n' "$HOME" ;;
     wrappers) printf 'file=%s/.local/bin/dev-*\n' "$HOME" ;;
     zram) printf 'command=sudo apt-get install zram-tools\nfile=/etc/default/zramswap\n' ;;
-    docker) printf 'command=sudo apt-get install [provedor Docker após verificação]\n' ;;
+    docker) printf 'command=sudo apt-get install [Docker provider packages after preview]\n' ;;
     earlyoom) printf 'availability=unavailable: constrained-build priority is not guaranteed\n' ;;
     gradle-global) printf 'file=%s/gradle.properties\n' "${GRADLE_USER_HOME:-$HOME/.gradle}" ;;
     swappiness) printf 'file=/etc/sysctl.d/[arquivo gerenciado]\nvm.swappiness=%s\n' "$swappiness" ;;

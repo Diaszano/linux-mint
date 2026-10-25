@@ -1,0 +1,28 @@
+---
+# Start this file explicitly with Docker Compose. Container limits are managed
+# by Docker and are outside the resource budget enforced by dev-run.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: developer
+      POSTGRES_USER: developer
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+    ports:
+      - "127.0.0.1:5432:5432"
+    cpus: "1.00"
+    mem_limit: 1g
+    pids_limit: 256
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  cache:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    cpus: "0.50"
+    mem_limit: 512m
+    pids_limit: 128
+
+volumes:
+  postgres-data:
