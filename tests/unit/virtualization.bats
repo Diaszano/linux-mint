@@ -51,6 +51,21 @@ SH
     [[ "$output" == *'emulator -accel-check: failed'* ]]
 }
 
+@test "KVM launch gate accepts a fully ready virtualization stack" {
+    _virtualization_cpu_flag() { return 0; }
+    _virtualization_kvm_device() { return 0; }
+    _virtualization_kvm_accessible() { return 0; }
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$FIXTURE/bin/kvm-ok"
+    cat >"$FIXTURE/sdk/emulator/emulator" <<'SH'
+#!/usr/bin/env bash
+[[ ${1:-} == -accel-check ]] || exit 2
+printf 'KVM (version 12) installed and usable.\n'
+SH
+    chmod +x "$FIXTURE/bin/kvm-ok" "$FIXTURE/sdk/emulator/emulator"
+    run virtualization_require_kvm "$FIXTURE/sdk"
+    [ "$status" = 0 ]
+}
+
 @test "KVM device helpers distinguish missing device and unavailable permissions" {
     run _virtualization_kvm_device "$FIXTURE/absent"
     [ "$status" != 0 ]

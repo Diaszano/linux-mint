@@ -11,7 +11,7 @@ dev_emulator_fail() {
 }
 
 dev_emulator_main() {
-    local sdk emulator avd_home avd_list avd_name avd_ini avd_path config image_sysdir
+    local sdk emulator avd_home avd_prefix avd_list avd_name avd_ini avd_path config image_sysdir
     local gpu=auto gpu_selected=0 arg
     local -a extra_args=()
     sdk=$(_virtualization_sdk) || {
@@ -49,6 +49,10 @@ dev_emulator_main() {
         dev_emulator_fail "AVD directory not found: $avd_home"
         return 1
     }
+    avd_home=$(realpath -e -- "$avd_home") || {
+        dev_emulator_fail 'Cannot resolve AVD home.'
+        return 1
+    }
     avd_list=$("$emulator" -list-avds 2>/dev/null) || {
         dev_emulator_fail 'Unable to list Android Virtual Devices.'
         return 1
@@ -72,6 +76,18 @@ dev_emulator_main() {
         dev_emulator_fail 'AVD path does not exist.'
         return 1
     }
+    avd_prefix=${avd_home%/}
+    if [[ $avd_prefix == / ]]; then
+        [[ $avd_path != / ]] || {
+            dev_emulator_fail 'AVD path must be inside the configured AVD home.'
+            return 1
+        }
+    else
+        [[ $avd_path == "$avd_prefix/"* ]] || {
+            dev_emulator_fail 'AVD path must be inside the configured AVD home.'
+            return 1
+        }
+    fi
     config=$avd_path/config.ini
     [[ -f $config && ! -L $config ]] || {
         dev_emulator_fail 'AVD config.ini is missing or unsafe.'

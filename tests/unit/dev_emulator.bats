@@ -99,6 +99,39 @@ run_emulator() {
     [ ! -e "$FIXTURE/dev-run.args" ]
 }
 
+@test "AVD paths outside the configured home are rejected before dev-run" {
+    outside="$FIXTURE/outside.avd"
+    mkdir -p "$outside"
+    printf 'image.sysdir.1=system-images/android-35/google_apis/x86_64/\n' >"$outside/config.ini"
+
+    printf 'path=%s\n' "$outside" >"$AVD_HOME/Test_x86.ini"
+    run run_emulator Test_x86
+    [ "$status" != 0 ]
+    [ ! -e "$FIXTURE/dev-run.args" ]
+
+    printf 'path=../outside.avd\n' >"$AVD_HOME/Test_x86.ini"
+    run run_emulator Test_x86
+    [ "$status" != 0 ]
+    [ ! -e "$FIXTURE/dev-run.args" ]
+
+    rm -r "$AVD_HOME/Test_x86.avd"
+    ln -s "$outside" "$AVD_HOME/Test_x86.avd"
+    printf 'path=%s\n' "$AVD_HOME/Test_x86.avd" >"$AVD_HOME/Test_x86.ini"
+    run run_emulator Test_x86
+    [ "$status" != 0 ]
+    [ ! -e "$FIXTURE/dev-run.args" ]
+}
+
+@test "custom AVD home permits AVD paths inside that home" {
+    custom_home="$FIXTURE/custom-avds"
+    mkdir -p "$custom_home/Test_x86.avd"
+    printf 'path=%s/Test_x86.avd\n' "$custom_home" >"$custom_home/Test_x86.ini"
+    printf 'image.sysdir.1=system-images/android-35/google_apis/x86_64/\n' >"$custom_home/Test_x86.avd/config.ini"
+    run env ANDROID_AVD_HOME="$custom_home" "$PROJECT/bin/test-dev-emulator" Test_x86
+    [ "$status" = 0 ]
+    [ -e "$FIXTURE/dev-run.args" ]
+}
+
 @test "acceleration and required-resource overrides are rejected" {
     for arg in -accel -accel=off -no-accel -memory -memory=1024 -cores -cores=2 -avd -avd=Other -no-boot-anim -qemu @Other -gpu=host; do
         run run_emulator Test_x86 "$arg"
