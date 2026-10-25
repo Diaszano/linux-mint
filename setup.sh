@@ -174,7 +174,13 @@ for module in "${conflict_order[@]}"; do
   swappiness) memory_plan --swappiness "$swappiness" >/dev/null || exit 1 ;;
   gradle-global) gradle_plan --global >/dev/null || exit 1 ;;
   earlyoom) memory_plan --earlyoom >/dev/null || exit 1 ;;
-  docker) docker_plan >/dev/null || exit 1 ;;
+  docker)
+    docker_plan >/dev/null || exit 1
+    [[ $DOCKER_PLAN_ACTION != manual ]] || {
+      error 'Docker service exists without a recognized package provider; manual review required before any module can be applied.'
+      exit 1
+    }
+    ;;
   esac
 done
 
@@ -282,15 +288,17 @@ RUN_ID=$(begin_run) || {
   exit 1
 }
 printf 'run_id=%s\n' "$RUN_ID"
-
-free_kb=$(df -Pk "$HOME" | awk 'NR == 2 {print $4}') || free_kb=unknown
-if [[ ! $free_kb =~ ^[0-9]+$ ]] || ((free_kb < 1048576)); then
-  ACTIVE_MODULE=setup
-  ACTIVE_PHASE=preflight
-  fail_run 1 || true
-  error 'At least 1 GiB of free space is required before installation; no module was applied.'
-  exit 1
-fi
+for disk_path in / "$HOME" /var/cache/apt/archives; do
+  [[ -d $disk_path ]] || disk_path=/var
+  free_kb=$(df -Pk -- "$disk_path" | awk 'NR == 2 {print $4}') || free_kb=unknown
+  if [[ ! $free_kb =~ ^[0-9]+$ ]] || ((free_kb < 1048576)); then
+    ACTIVE_MODULE=setup
+    ACTIVE_PHASE=preflight
+    fail_run 1 || true
+    error "At least 1 GiB of free space is required on $disk_path before installation; no module was applied."
+    exit 1
+  fi
+done
 
 if [[ -v selected[earlyoom] ]]; then
   ACTIVE_MODULE=earlyoom
@@ -352,12 +360,21 @@ apply_module() {
       error 'Docker provider or package selection changed after preview; re-run setup and review it.'
       return 1
     }
-    current_deps=$(apt_preview_dependencies)
-    setup_subset "${plan_package_sets[docker]}" "${DOCKER_PLAN_PACKAGES[*]}" &&
-      setup_action_subset "${plan_deps[docker]}" "$current_deps" || {
+    setup_subset "${plan_package_sets[docker]}" "${DOCKER_PLAN_PACKAGES[*]}" || {
       error 'The Docker package or dependency set grew after preview; re-run setup and review it.'
       return 1
     }
+    if [[ ${plan_actions[docker]} == install ]]; then
+      current_deps=$(apt_preview_dependencies)
+      setup_action_subset "${plan_deps[docker]}" "$current_deps" || {
+        error 'The Docker package or dependency set grew after preview; re-run setup and review it.'
+        return 1
+      }
+    fi
+    if [[ ${plan_actions[docker]} == preserve ]]; then
+      printf 'Docker already exists; existing provider and service preserved.\n'
+      return 0
+    fi
     docker_apply "$RUN_ID" --docker --confirmed "$DOCKER_PLAN_TOKEN"
     ;;
   earlyoom)
@@ -412,7 +429,10 @@ verify_module() {
     [[ $(systemctl is-active zramswap.service 2>/dev/null) == active ]] || return 1
     [[ $(swapon --show=NAME --noheadings 2>/dev/null) == *zram* ]] || return 1
     ;;
-  docker) [[ $(systemctl is-active docker.service 2>/dev/null) == active ]] || return 1 ;;
+  docker)
+    [[ ${plan_actions[docker]} == preserve ]] ||
+      [[ $(systemctl is-active docker.service 2>/dev/null) == active ]] || return 1
+    ;;
   earlyoom) return 1 ;;
   gradle-global)
     [[ -f ${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties ]] || return 1

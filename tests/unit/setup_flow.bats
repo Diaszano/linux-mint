@@ -32,7 +32,13 @@ echo 16
 EOF
   cat >"$BATS_TEST_TMPDIR/bin/df" <<'EOF'
 #!/bin/sh
-if [ "${LOW_DISK:-no}" = yes ]; then
+for arg do path=$arg; done
+case "${path:-}" in
+  /) low=${ROOT_LOW_DISK:-${LOW_DISK:-no}} ;;
+  /var/cache/apt/archives) low=${APT_DISK_LOW:-${LOW_DISK:-no}} ;;
+  *) low=${HOME_LOW_DISK:-${LOW_DISK:-no}} ;;
+esac
+if [ "$low" = yes ]; then
   printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda2 1000000 999999 1 100%% /\n'
 else
   printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda2 100000000 40000000 60000000 40%% /\n'
@@ -60,15 +66,25 @@ exit 0
 EOF
   cat >"$BATS_TEST_TMPDIR/bin/dpkg-query" <<'EOF'
 #!/bin/sh
+last_arg=
+for arg do last_arg=$arg; done
+if [ -f "$APT_INSTALLED_FILE" ] && grep -Fxq -- "$last_arg" "$APT_INSTALLED_FILE"; then
+  echo 'install ok installed'
+  exit 0
+fi
 case "$*" in
   *binary:Package*)
     printf 'bash\tinstall ok installed\t5.2\n'
+if [ -f "$APT_INSTALLED_FILE" ]; then
+  while IFS= read -r package; do printf '%s\tinstall ok installed\t1.0\n' "$package"; done <"$APT_INSTALLED_FILE"
+fi
     if [ "${ZRAM_CONFLICT:-no}" = yes ]; then printf 'zram-tools\tinstall ok installed\t0.3.3\n'; fi
     if [ "${OOM_CONFLICT:-no}" = yes ]; then printf 'earlyoom\tinstall ok installed\t1.7\n'; fi
     if [ "${DOCKER_CONFLICT:-no}" = yes ]; then
       printf 'docker.io\tinstall ok installed\t26.1\n'
       printf 'docker-ce\tinstall ok installed\t27.0\n'
     fi
+if [ "${DOCKER_EXISTING:-}" = distro ]; then printf 'docker.io\tinstall ok installed\t26.1\n'; fi
     ;;
   *zram-tools*)
     if [ "${ZRAM_CONFLICT:-no}" = yes ]; then echo 'install ok installed'; else echo 'unknown ok not-installed'; fi
@@ -77,7 +93,9 @@ case "$*" in
     if [ "${OOM_CONFLICT:-no}" = yes ]; then echo 'install ok installed'; else echo 'unknown ok not-installed'; fi
     ;;
   *docker.io*|*docker-ce*)
-    if [ "${DOCKER_CONFLICT:-no}" = yes ]; then echo 'install ok installed'; else echo 'unknown ok not-installed'; fi
+if [ "${DOCKER_CONFLICT:-no}" = yes ]; then echo 'install ok installed'; elif [ "${DOCKER_EXISTING:-}" = distro ]; then
+    case "$*" in *docker.io*) echo 'install ok installed' ;; *) echo 'unknown ok not-installed' ;; esac
+else echo 'unknown ok not-installed'; fi
     ;;
   *) echo 'unknown ok not-installed' ;;
 esac
@@ -86,8 +104,18 @@ EOF
 #!/bin/sh
 printf 'systemctl %s\n' "$*" >>"$PROBE_LOG"
 case "$*" in
-  *is-active*) exit 3 ;;
-  *show*) printf 'LoadState=not-found\nUnitFileState=disabled\nActiveState=inactive\n'; exit 0 ;;
+*is-active*docker.service*) [ "${DOCKER_EXISTING:-}" = distro ] && exit 0; exit 3 ;;
+*is-active*) exit 3 ;;
+*show*docker.service*)
+  if [ "${DOCKER_MANUAL:-no}" = yes ]; then
+    printf 'LoadState=loaded\nUnitFileState=disabled\nActiveState=inactive\n'
+  elif [ "${DOCKER_EXISTING:-}" = distro ]; then
+    printf 'LoadState=loaded\nUnitFileState=enabled\nActiveState=active\n'
+  else
+    printf 'LoadState=not-found\nUnitFileState=disabled\nActiveState=inactive\n'
+  fi
+  exit 0 ;;
+*show*) printf 'LoadState=not-found\nUnitFileState=disabled\nActiveState=inactive\n'; exit 0 ;;
   *list-units*|*list-unit-files*) exit 0 ;;
   *) exit 0 ;;
 esac
@@ -101,15 +129,22 @@ case "$*" in
     [ ! -f "$APT_SIM_COUNT" ] || read -r count <"$APT_SIM_COUNT"
     count=$((count + 1))
     printf '%s\n' "$count" >"$APT_SIM_COUNT"
+    printf 'Inst bash (5.2)\n' >>"$PROBE_LOG"
     echo 'Reading package lists... Done'
+    echo 'Inst bash (5.2)'
     if [ "${APT_EXTRA_AFTER_PREVIEW:-no}" = yes ] && [ "$count" -ge 2 ]; then
-      echo 'Inst bash (5.2)'
+      echo 'Inst curl (8.0)'
     fi
     exit 0
     ;;
   *install*)
     if [ "${APT_INTERRUPT:-no}" = yes ]; then kill -INT "$PPID"; exit 130; fi
     [ "${APT_FAIL:-no}" = yes ] && exit 100
+    installed=no
+    for arg do
+      if [ "$arg" = install ]; then installed=yes; continue; fi
+      if [ "$installed" = yes ]; then printf '%s\n' "$arg" >>"$APT_INSTALLED_FILE"; fi
+    done
     exit 0
     ;;
   *) [ "${APT_FAIL:-no}" = yes ] && exit 100; exit 0 ;;
@@ -134,6 +169,7 @@ EOF
   chmod +x "$BATS_TEST_TMPDIR/bin/minisign" "$BATS_TEST_TMPDIR/bin/curl"
   export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   export APT_SIM_COUNT="$BATS_TEST_TMPDIR/apt-sim-count"
+  export APT_INSTALLED_FILE="$BATS_TEST_TMPDIR/apt-installed"
 }
 
 failure_run_id() {
@@ -181,13 +217,16 @@ PY
   [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
 }
 
-@test "low disk space blocks after a journal exists and reports its run id" {
+@test "root filesystem low space blocks after journaling and before module changes" {
   printf 'keep this content\n' >"$HOME/.bashrc"
-  export LOW_DISK=yes
+  export ROOT_LOW_DISK=yes HOME_LOW_DISK=no
   run bash "$ROOT/setup.sh" --only wrappers --yes
   [ "$status" -ne 0 ]
+  [[ "$output" == *'1 GiB'* ]]
   [[ "$output" == *'run_id='* ]]
   [ -d "$XDG_STATE_HOME/vaio-fe16-dev-setup/runs" ]
+  ! grep -Eq 'apt-get .*--yes|sudo |systemctl .* (enable|start|restart|mask)' "$PROBE_LOG"
+  ! grep -q 'sudo ' "$PROBE_LOG"
   [ ! -e "$HOME/.local/bin/dev-run" ]
   [ "$(cat "$HOME/.bashrc")" = 'keep this content' ]
 }
@@ -300,4 +339,24 @@ PY
   [ "$status" -ne 0 ]
   [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
   ! grep -Eq '^sudo |apt-get .*--yes|systemctl (enable|start|restart|mask)' "$PROBE_LOG"
+}
+
+@test "a prior APT plan does not invalidate preserved Docker" {
+  export DOCKER_EXISTING=distro
+  run bash "$ROOT/setup.sh" --only baseline --docker --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Docker already exists'* ]]
+  grep -q '^apt-get --simulate .* install ' "$PROBE_LOG"
+  grep -q '^Inst bash (5.2)$' "$PROBE_LOG"
+  grep -q '^apt-get --yes .* install ' "$PROBE_LOG"
+  ! grep -q 'apt-get .*docker.io' "$PROBE_LOG"
+  ! grep -Eq 'systemctl .* (enable|start|restart) docker.service' "$PROBE_LOG"
+}
+@test "Docker manual action is rejected before earlier modules can be applied" {
+  export DOCKER_MANUAL=yes
+  run bash "$ROOT/setup.sh" --only baseline --docker --yes
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'manual'* ]]
+  [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
+  ! grep -Eq 'apt-get .*--yes|sudo |systemctl .* (enable|start|restart|mask)' "$PROBE_LOG"
 }
