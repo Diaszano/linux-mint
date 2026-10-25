@@ -211,6 +211,43 @@ _preflight_doctor_fact() {
   printf '%s\t%s\t%s\n' "$component" "$field" "$value"
 }
 
+_preflight_doctor_power_supply_facts() {
+  local root=$1 path field online found=no
+  DOCTOR_POWER_SUPPLY_STATUS='NOT INSTALLED'
+  DOCTOR_POWER_SUPPLY=''
+  for path in "$root"/*/online; do
+    [[ -e $path || -L $path ]] || continue
+    found=yes
+    field=${path%/*}
+    field=${field##*/}
+    if IFS= read -r online 2>/dev/null <"$path" && [[ $online == 0 || $online == 1 ]]; then
+      [[ $DOCTOR_POWER_SUPPLY_STATUS == WARN ]] || DOCTOR_POWER_SUPPLY_STATUS=PASS
+    else
+      online=unknown
+      DOCTOR_POWER_SUPPLY_STATUS=WARN
+    fi
+    if [[ -n $DOCTOR_POWER_SUPPLY ]]; then
+      DOCTOR_POWER_SUPPLY+=" $field=$online"
+    else
+      DOCTOR_POWER_SUPPLY="$field=$online"
+    fi
+  done
+  [[ $found == yes ]] || DOCTOR_POWER_SUPPLY=none
+}
+
+_preflight_doctor_thermal_status() {
+  local temperature=$1 power_profile=$2 power_supply=$3
+  if [[ $temperature == PASS && ( $power_profile == PASS || $power_supply == PASS ) \
+      && $power_profile != WARN && $power_supply != WARN ]]; then
+    printf 'PASS\n'
+  elif [[ $temperature == 'NOT INSTALLED' && $power_profile == 'NOT INSTALLED' \
+      && $power_supply == 'NOT INSTALLED' ]]; then
+    printf 'NOT INSTALLED\n'
+  else
+    printf 'WARN\n'
+  fi
+}
+
 preflight_doctor_facts() {
   local release key value os_id='' os_version='' codename='' arch threads memory cpu_model controllers virt='none'
   local swaps='' zram='' kvm_access=no kvm_ok='NOT INSTALLED' emulator='NOT INSTALLED' sdk renderer='NOT INSTALLED'
@@ -325,29 +362,21 @@ preflight_doctor_facts() {
   power_supply_status='NOT INSTALLED'
   power_supply='none'
   if command -v sensors >/dev/null 2>&1; then
-    temperature=$(sensors 2>/dev/null | head -n 4 | tr '\n' ' ')
-    [[ -n $temperature ]] && temperature_status=PASS || temperature_status=WARN
+    temperature=$(sensors 2>/dev/null || true)
+    [[ $temperature =~ [[:space:]][+-]?[0-9]+([.][0-9]+)?°C([[:space:]]|$) ]] && temperature_status=PASS || temperature_status=WARN
   fi
   if command -v powerprofilesctl >/dev/null 2>&1; then
-    power=$(powerprofilesctl get 2>/dev/null || true)
-    [[ -n $power ]] && power_profile_status=PASS || { power=unavailable; power_profile_status=WARN; }
+    if power=$(powerprofilesctl get 2>/dev/null) && [[ -n $power ]]; then
+      power_profile_status=PASS
+    else
+      power=unavailable
+      power_profile_status=WARN
+    fi
   fi
-  shopt -s nullglob
-  for path in /sys/class/power_supply/*/online; do
-    field=${path%/*}
-    field=${field##*/}
-    IFS= read -r online <"$path" 2>/dev/null || online=unknown
-    power_supply+=" $field=$online"
-    power_supply_status=PASS
-  done
-  shopt -u nullglob
-  if [[ $temperature_status == PASS && ( $power_profile_status == PASS || $power_supply_status == PASS ) ]]; then
-    status=PASS
-  elif [[ $temperature_status == 'NOT INSTALLED' && $power_profile_status == 'NOT INSTALLED' && $power_supply_status == 'NOT INSTALLED' ]]; then
-    status='NOT INSTALLED'
-  else
-    status=WARN
-  fi
+  _preflight_doctor_power_supply_facts /sys/class/power_supply
+  power_supply_status=$DOCTOR_POWER_SUPPLY_STATUS
+  power_supply=$DOCTOR_POWER_SUPPLY
+  status=$(_preflight_doctor_thermal_status "$temperature_status" "$power_profile_status" "$power_supply_status")
   _preflight_doctor_fact thermal_power status "$status"
   _preflight_doctor_fact thermal_power temperature_status "$temperature_status"
   _preflight_doctor_fact thermal_power sensors "$temperature"

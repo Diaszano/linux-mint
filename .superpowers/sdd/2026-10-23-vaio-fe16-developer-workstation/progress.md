@@ -119,7 +119,8 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - Original disposable guest has an active orphan docker.socket (`LoadState=not-found`, empty FragmentPath) after removal of only Docker test packages. It was preserved; current docker_plan fails closed before APT/service actions. No physical VAIO changes or hardware acceptance tests.
 
 ## Task 13 status
-- [x] Implementation and focused disposable-VM diagnostics tests are complete; detailed verification and environment limitations are in `task-13-report.md`.
-- The focused doctor suite passed 6/6. Full sequential unit coverage passed 170 Bats tests plus 19 manifest tests. Full integration coverage reported 18 tests: 15 passed, 3 Gradle tests skipped because Gradle is absent from the disposable overlay guest.
-- Static checks and JSON parsing passed in the guest. The named `tests/integration/run-vm.sh` runner is absent, so the repository's actual `tests/integration/*.bats` suite was run directly with `VAIO_TEST_VM=1`.
+- [x] Task 13 implementation commit `c887e13`; independent review probe-status fix is ready for commit.
+- Review regressions cover an unreadable power-supply `online` probe, warning propagation, and informational-only sensor output. Focused doctor suite: 9/9 passed.
+- Post-fix full sequential unit suite: 173/173 Bats; Python manifest suite: 19/19 passed. Integration suite in disposable VM with `VAIO_TEST_VM=1`: 18 tests, 14 passed and 4 skipped (Docker absent and three Gradle tests absent).
+- Bash syntax, warning-level ShellCheck, `shfmt` on `bin/dev-doctor`, JSON parsing, and legacy fixture hashes passed. Details in `task-13-report.md`.
 - No physical notebook installation, tuning, or acceptance tests were performed. KVM, SDK, Gradle, and hardware-specific performance behavior remain unverified.

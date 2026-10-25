@@ -110,3 +110,32 @@ assert zram["manager_packages"] == "zram-tools"
   [ "$status" -eq 2 ]
   [ ! -e "$DOCTOR_MUTATIONS" ]
 }
+
+@test "power supply read failures are WARN and unknown" {
+  local probe="$BATS_TEST_TMPDIR/power/AC/online"
+  mkdir -p "$probe"
+  run bash -c 'source "$1/lib/preflight.sh"; _preflight_doctor_power_supply_facts "$2"; printf "%s\t%s\n" "$DOCTOR_POWER_SUPPLY_STATUS" "$DOCTOR_POWER_SUPPLY"' _ "$ROOT" "$BATS_TEST_TMPDIR/power"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'WARN\tAC=unknown' ]
+}
+
+@test "thermal summary cannot PASS with an unknown probe" {
+  run bash -c 'source "$1/lib/preflight.sh"; _preflight_doctor_thermal_status PASS PASS WARN' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  [ "$output" = WARN ]
+}
+
+@test "informational sensor output without a reading is not PASS" {
+  cat >"$BATS_TEST_TMPDIR/bin/sensors" <<'EOF'
+#!/bin/sh
+echo 'No sensors found!'
+EOF
+  cat >"$BATS_TEST_TMPDIR/bin/powerprofilesctl" <<'EOF'
+#!/bin/sh
+echo balanced
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/bin/sensors" "$BATS_TEST_TMPDIR/bin/powerprofilesctl"
+  run "$ROOT/bin/dev-doctor" --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | python3 -c 'import json,sys; t=json.load(sys.stdin)["thermal_power"]; assert t["temperature_status"] == "WARN"; assert t["status"] == "WARN"'
+}
