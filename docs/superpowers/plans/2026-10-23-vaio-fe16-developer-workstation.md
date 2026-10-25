@@ -196,11 +196,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** dev-build COMMAND [ARGS...] sets workload-local Go/Rust/CMake concurrency defaults only if absent, then calls dev-run build with original argv. The supported Gradle isolation recipe is dev-build ./gradlew assembleDebug --no-daemon. The wrapper never asserts that an already running Gradle daemon or Android Studio build joined its scope.
 
-- [ ] **Step 1: Write failing tests.** Assert spaces and argument boundaries, exit status 0/7 and signals propagate; user-set concurrency variables win; no global environment or project file is changed; the documented Gradle command includes --no-daemon; an existing reusable daemon case is reported as outside the isolation guarantee.
-- [ ] **Step 2: Run unit tests red.** Run: bats tests/unit/dev_build.bats. Expected: FAIL for absent wrapper.
-- [ ] **Step 3: Implement the thin wrapper.** Preserve argv with arrays/exec, set only absent workload-local variables, and keep Gradle advice in documentation instead of silently rewriting project or global properties.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/dev_build.bats && bash -n bin/dev-build. Expected: PASS. In a disposable systemd VM run bats tests/integration/gradle_scope.bats against a small fixture project; expected: --no-daemon creates a single-use daemon if needed, and any daemon, Kotlin/compiler process and worker used by this test remains in the verified build cgroup. A deliberately reused preexisting daemon must be detected and excluded from the guarantee.
-- [ ] **Step 5: Commit.** git add bin/dev-build tests/unit/dev_build.bats tests/integration/gradle_scope.bats docs/GRADLE.md; git commit -m "feat: add scoped build wrapper and Gradle isolation checks"
+- [x] **Step 1: Write failing tests.** Assert spaces and argument boundaries, exit status 0/7 and signals propagate; user-set concurrency variables win; no global environment or project file is changed; the documented Gradle command includes --no-daemon; an existing reusable daemon case is reported as outside the isolation guarantee.
+- [x] **Step 2: Run unit tests red.** Run: bats tests/unit/dev_build.bats. Expected: FAIL for absent wrapper.
+- [x] **Step 3: Implement the thin wrapper.** Preserve argv with arrays/exec, set only absent workload-local variables, and keep Gradle advice in documentation instead of silently rewriting project or global properties.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/dev_build.bats && bash -n bin/dev-build. Expected: PASS. In a disposable systemd VM run bats tests/integration/gradle_scope.bats against a small fixture project; expected: --no-daemon creates a single-use daemon if needed, and any daemon, Kotlin/compiler process and worker used by this test remains in the verified build cgroup. A deliberately reused preexisting daemon must be detected and excluded from the guarantee.
+- [x] **Step 5: Commit.** git add bin/dev-build tests/unit/dev_build.bats tests/integration/gradle_scope.bats docs/GRADLE.md; git commit -m "feat: add scoped build wrapper and Gradle isolation checks"
 
 ### Task 11: KVM diagnostics and fail-fast Android Emulator wrapper
 

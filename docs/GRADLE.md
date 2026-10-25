@@ -8,7 +8,9 @@ Use the project wrapper through the scoped build command and disable reuse of a 
 dev-build ./gradlew assembleDebug --no-daemon
 ```
 
-Gradle can still create a single-use daemon when the requested JVM options differ from the client process. That daemon and its workers are expected to remain inside the `dev-build` cgroup; an already-running daemon reused by another process and builds started directly from Android Studio are outside the generic wrapper guarantee.
+`dev-build` sets `GOMAXPROCS=8`, `CARGO_BUILD_JOBS=4`, and `CMAKE_BUILD_PARALLEL_LEVEL=4` for the child workload only when each variable is unset. Explicit values in the caller's environment are preserved, and no shell profile or project file is changed.
+
+Gradle's `--no-daemon` prevents reuse of a persistent daemon, but Gradle may still start a single-use daemon when JVM arguments differ from the client. A single-use daemon, compiler process, and worker started by the command remain in the verified `dev-build` cgroup. The wrapper does not move an already-running daemon into that cgroup; commands that reuse one are outside the isolation guarantee. Builds started directly from Android Studio are also outside it.
 
 The default setup only prints this guidance. It does not write project files or Gradle user properties.
 
