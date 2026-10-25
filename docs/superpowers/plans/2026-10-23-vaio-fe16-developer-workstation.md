@@ -244,11 +244,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** dev-profile show/select reads the shipped balanced tab-separated table and writes a mode-0600 user-owned profile choice for future scopes. A measured local throughput profile may be selected after validation, but no faster values are pre-populated before VAIO measurements. The current workload scope is never changed.
 
-- [ ] **Step 1: Write failing tests.** Assert balanced remains selected by default; malformed, negative, unbounded, too-large or shell-code-like rows are rejected as data; valid selection affects the next dev-run only; a failed write preserves the prior choice; running scopes are unaffected.
+- [x] **Step 1: Write failing tests.** Assert balanced remains selected by default; malformed, negative, unbounded, too-large or shell-code-like rows are rejected as data; valid selection affects the next dev-run only; a failed write preserves the prior choice; running scopes are unaffected.
 - [x] **Step 2: Run tests red.** Run: bats tests/unit/dev_profile.bats. Expected: FAIL for absent profile CLI.
 - [x] **Step 3: Implement strict parse and atomic user choice.** Use the same validated row reader as dev-run, never source profile content, require explicit selection and show effective provisional limits before launch.
 - [x] **Step 4: Verify green.** Run: bats tests/unit/dev_profile.bats tests/unit/dev_run.bats && bash -n bin/dev-profile bin/dev-run. Expected: PASS and no elevated command.
-- [ ] **Step 5: Commit.** git add bin/dev-profile bin/dev-run config/profiles.conf tests/unit/dev_profile.bats; git commit -m "feat: validate selectable workload profiles"
+- [x] **Step 5: Commit.** Implemented in `e59dae2` and `1462ddc`; follow-up regression committed separately. Files include `bin/dev-profile`, `lib/profiles.sh`, `bin/dev-run`, `config/profiles.conf`, `tests/unit/dev_profile.bats`, and `tests/unit/dev_run.bats`.
 
 ### Task 15: Idempotent user wrapper installation
 

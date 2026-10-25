@@ -165,6 +165,19 @@ SH
     [ "$status" != 0 ]
 }
 
+@test "mode-0600 incomplete user table is rejected before any workload starts" {
+    mkdir -p "$HOME/.config/vaio-dev"
+    printf 'build\t800\t7\t9\t2\t1024\n' >"$HOME/.config/vaio-dev/profiles.conf"
+    chmod 600 "$HOME/.config/vaio-dev/profiles.conf"
+
+    run "$ROOT/bin/dev-run" emulator touch "$FIXTURE/sentinel"
+
+    [ "$status" != 0 ]
+    [[ "$output" == *'Malformed workload profile table'* ]]
+    [ ! -e "$FIXTURE/request" ]
+    [ ! -e "$FIXTURE/sentinel" ]
+}
+
 @test "valid private user rows apply only to the next workload" {
     mkdir -p "$HOME/.config/vaio-dev"
     printf 'build\t200\t2\t3\t0\t128\nemulator\t400\t5\t6\t1\t512\nheavy\t600\t6\t8\t2\t768\n' >"$HOME/.config/vaio-dev/profiles.conf"

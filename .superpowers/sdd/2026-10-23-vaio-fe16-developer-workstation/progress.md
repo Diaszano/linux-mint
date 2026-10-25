@@ -125,8 +125,8 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - No physical notebook installation, tuning, or acceptance testing was performed. Hardware-dependent KVM, SDK/AVD, Gradle, and performance behavior remain unverified.
 
 ## Task 14 status
-- Base implementation committed `feat: validate selectable workload profiles`; independent review found incomplete user tables were accepted. Fix is pending commit and independent re-review.
-- Shared parser in `lib/profiles.sh` now requires `build`, `emulator`, and `heavy` rows; profile CLI gives a specific incomplete-table diagnostic. Regression verifies a mode-0600 build-only table is rejected and the prior profile selection remains unchanged. Existing shell-code and bounds validation remain.
-- TDD RED: in a disposable Noble VM, build-only table incorrectly passed `show` and `select balanced`, overwriting the prior selection. Focused Bats passed 27/27.
-- Full sequential disposable VM verification: 182 Bats unit tests, 19 Python tests, and 18 integration tests (15 pass, 3 environment skips). Bash syntax, warning-level ShellCheck, applicable shfmt, and all seven legacy hashes passed. `shfmt -d -i 4 bin/dev-profile` reports pre-existing formatting differences; no unrelated broad formatting was applied.
-- No legacy files or physical VAIO settings changed. No hardware acceptance or performance claim. The plan-referenced `tests/acceptance/vaio-checklist.md` is absent; track as a Task 18/acceptance limitation if needed. Full evidence: `task-14-report.md`.
+- [x] Task 14 implementation commits: `e59dae2` (`feat: validate selectable workload profiles`) and `1462ddc` (`fix: reject incomplete workload profile tables`). Independent review passed after requiring all three workload rows.
+- Added a mode-0600 incomplete-table regression directly to `tests/unit/dev_run.bats`; `dev-run emulator` reports the malformed table and creates neither a scope request nor payload sentinel.
+- Latest focused VM suite: 28/28 passed. Full unit suite: 183/183 Bats; Python suite: 19/19; integration suite: 18 total, 14 passed and 4 skipped for unavailable Docker/Gradle prerequisites.
+- Bash syntax, warning-level ShellCheck, applicable shfmt, seven legacy hashes, and `git diff --check` passed. `shfmt -d -i 4 bin/dev-profile` retains pre-existing formatting differences; no unrelated reformatting was applied.
+- No legacy files or physical VAIO settings changed. Hardware acceptance and performance measurements remain unperformed. The plan-referenced `tests/acceptance/vaio-checklist.md` is absent and remains a Task 18 documentation limitation. Full evidence: `task-14-report.md`.
