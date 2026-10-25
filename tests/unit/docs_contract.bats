@@ -31,9 +31,15 @@ setup() {
     [[ "$docs" == *'--docker'* && "$docs" == *'docker'* && "$docs" == *'default'* ]]
     [[ "$docs" == *'--zram'* && "$docs" == *'zram'* && "$docs" == *'default'* ]]
     [[ "$docs" == *'--earlyoom'* && "$docs" == *'unavailable'* ]]
+    [[ "$docs" == *'constrained-build kill priority is unverified'* ]]
     [[ "$docs" == *'--gradle-global'* && "$docs" == *'global Gradle'* ]]
     [[ "$docs" == *'swappiness'* && "$docs" == *'sysctl'* ]]
     [[ "$docs" == *'not enabled by default'* || "$docs" == *'off by default'* ]]
+
+    local troubleshooting
+    troubleshooting=$(cat "$ROOT/docs/TROUBLESHOOTING.md")
+    [[ "$troubleshooting" == *'`--earlyoom` fails before preflight or journaling'* ]]
+    [[ "$troubleshooting" == *'No host changes are made'* ]]
 }
 
 @test "technical docs are English and preserve the legacy README" {

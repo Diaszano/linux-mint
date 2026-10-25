@@ -15,7 +15,7 @@ The original scripts remain unchanged under `legacy/vaio-fe16-dev-setup/` and ar
 
 ## Setup preview
 
-Run `./setup.sh --check` for read-only checks or `./setup.sh --dry-run` to inspect a proposed transaction. Review each package, service, file, and conflict before confirming an installation. The default module set is `baseline`, `kvm`, `mise`, and `wrappers`. Docker, zram, earlyoom, global Gradle settings, and swappiness changes are not enabled by default. `earlyoom` remains unavailable and fails closed until its constrained-build priority can be guaranteed.
+Run `./setup.sh --check` for read-only checks or `./setup.sh --dry-run` to inspect the proposed transaction. Review package, service, file, and conflict details before confirming installation. The default modules are `baseline`, `kvm`, `mise`, and `wrappers`. Docker, zram, earlyoom, global Gradle settings, and swappiness changes are disabled by default. `earlyoom` remains unavailable and fails closed because constrained-build kill priority is unverified.
 
 Supported options are `--check`, `--dry-run`, `--only`, `--skip`, `--zram`, `--docker`, `--earlyoom`, `--gradle-global`, `--swappiness`, `--skip-mise`, `--no-docker`, `--no-earlyoom`, and `--yes`. `setup.sh --help` is authoritative. See [usage](docs/USAGE.md) for the exact selection and confirmation rules.
 

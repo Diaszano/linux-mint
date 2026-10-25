@@ -16,7 +16,7 @@ dev-rollback --list
 - Read the full conflict and inventory report. If package, swap, service, or systemd unit state is unknown, setup stops before package installation or service configuration. Restore reliable package/service queries and rerun `--check`.
 - Existing zram managers, active zram, swap policies, OOM daemons, Docker provider packages/services, or conflicting systemd units are preserved. Do not remove or disable them to force a plan through. Resolve the conflict manually only after reviewing the existing configuration and obtaining explicit authorization for that migration.
 - `--check` is read-only. `--dry-run` simulates package changes and previews selected modules. `--yes` confirms the exact plan but does not select optional modules. Repeat the same selection for the actual run after reviewing its preview.
-- `earlyoom` intentionally fails closed before package installation because the current implementation does not guarantee constrained-build kill priority. Do not try to install it through this setup.
+- `--earlyoom` fails before preflight or journaling and returns an unsupported-feature error. No host changes are made. Constrained-build kill priority is unverified; leave it disabled and use `dev-build` for cgroup-limited builds.
 
 ## Workload refuses to start
 

@@ -143,6 +143,11 @@ else
 fi
 for module in "${!skip[@]}"; do unset 'selected[$module]'; done
 
+if [[ -v selected[earlyoom] ]]; then
+  error 'earlyoom remains unavailable: constrained-build kill priority is unverified. Leave --earlyoom disabled and use dev-build for cgroup-limited builds. No host changes were made.'
+  exit 1
+fi
+
 host_facts=$(preflight_host) || exit 1
 require_normal_user || exit 1
 printf '%s\n' "$host_facts"
@@ -299,14 +304,6 @@ for disk_path in / "$HOME" /var/cache/apt/archives; do
     exit 1
   fi
 done
-
-if [[ -v selected[earlyoom] ]]; then
-  ACTIVE_MODULE=earlyoom
-  ACTIVE_PHASE=apply
-  error 'earlyoom remains unavailable; no selected module was applied.'
-  fail_run 1 || true
-  exit 1
-fi
 
 apply_module() {
   local module=$1 token current_missing

@@ -323,14 +323,23 @@ PY
   ! grep -Eq 'apt-get|^sudo |systemctl (enable|start|restart|mask)' "$PROBE_LOG"
 }
 
-@test "earlyoom stays unavailable and fails closed with a run id" {
+@test "unsupported earlyoom exits before journal or host operations" {
   run bash "$ROOT/setup.sh" --only earlyoom --yes
   [ "$status" -ne 0 ]
   [[ "$output" == *'earlyoom remains unavailable'* ]]
-  run_id=$(failure_run_id)
-  [ -n "$run_id" ]
-  assert_failure_record "$run_id" earlyoom apply 1
-  ! grep -Eq '^sudo |systemctl (enable|start|restart|mask)' "$PROBE_LOG"
+  [[ "$output" == *'constrained-build kill priority is unverified'* ]]
+  [[ "$output" == *'use dev-build for cgroup-limited builds'* ]]
+  [[ "$output" == *'No host changes were made'* ]]
+  [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
+  ! grep -Eq 'apt-get|^sudo |systemctl ' "$PROBE_LOG"
+
+  run bash "$ROOT/setup.sh" --earlyoom --yes
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'earlyoom remains unavailable'* ]]
+  [[ "$output" == *'constrained-build kill priority is unverified'* ]]
+  [[ "$output" == *'No host changes were made'* ]]
+  [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
+  ! grep -Eq 'apt-get|^sudo |systemctl ' "$PROBE_LOG"
 }
 
 @test "unsupported host is refused before journal or installation" {

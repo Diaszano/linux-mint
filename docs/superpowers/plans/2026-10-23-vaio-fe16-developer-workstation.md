@@ -331,6 +331,31 @@ Expected: integration exits 0, with unavailable optional prerequisites reported 
 - **Review focus:** Each of the five listed failure classes has a test in its owning task. Each code task has a red-green cycle; Task 1 records the baseline and Task 18 is a documentation-only acceptance checklist. Every task has five checkable steps and an English Conventional Commit.
 - **Proportion:** Optional unattended Android Studio/SDK installation and dev-benchmark are omitted. The design's performance claim remains an evidence gate, and initial ceilings stay provisional.
 
+## Implementation accounting
+
+| Task | Status | Candidate evidence or limitation |
+| --- | --- | --- |
+| 1. Legacy characterization | Complete | Legacy behavior tests and checksums; legacy files unchanged. |
+| 2. Read-only preflight and CLI | Complete | Preview, flag validation, and conflict inventory tests. |
+| 3. Journal and owned writes | Complete | Manifest, backup, idempotency, and atomic-write tests. |
+| 4. Rollback | Complete | Clean restore and changed-file conflict tests. |
+| 5. Cgroup workload gates | Complete | Effective limits and process membership verified in disposable VM. |
+| 6. Package conflict barrier | Complete | Conflict checks run before package/service mutation. |
+| 7. Memory and OOM policy | Partial by safety policy | zram/swappiness paths are implemented. `--earlyoom` is unsupported and exits before preflight, journaling, packages, or services because build-first kill priority is unverified. No Java process-name matching is used. |
+| 8. Signed mise | Complete | Pinned signature and artifact digest verified in disposable VM. |
+| 9. Gradle guidance | Complete | Project-level guidance; global properties remain opt-in. |
+| 10. Scoped builds | Complete | `--no-daemon` build and descendant containment verified in disposable VM. |
+| 11. Emulator wrapper | Complete with hardware acceptance pending | KVM/AVD refusal paths and wrapper contract tested; physical accelerated AVD acceptance not run. |
+| 12. Optional Docker | Complete | Opt-in and bounded configuration tested in a disposable VM; final fresh VM lacked Docker. |
+| 13. Read-only doctor | Complete | Unit and disposable-VM behavior verified. |
+| 14. Profile selection | Complete | Profile validation and fail-closed behavior tested. |
+| 15. User wrappers | Complete | Idempotent installation and rollback tested in disposable VM. |
+| 16. Setup orchestration | Complete | Dependency order, interruption handling, disk checks, idempotency, and rollback tested. |
+| 17. Documentation and VM verification | Complete | Warning-level ShellCheck and documented style-specific shfmt gates passed; default ShellCheck retains 49 informational diagnostics. |
+| 18. Physical acceptance handoff | Complete as documentation only | Checklist covers AC-01 through AC-12. Physical installation, performance, thermals, and responsiveness remain untested and separately authorized. |
+
+**Deviation and release limits:** EarlyOOM installation/configuration is intentionally not delivered; the explicit option returns an actionable unsupported-feature error before any preflight or journal creation. The final full VM run skips optional Docker and Gradle integration cases when those tools are absent, though earlier targeted disposable-VM runs covered them. No physical VAIO installation or acceptance workload was run.
+
 ## Handoff
 
 Implementation approval does not by itself authorize running setup on the physical laptop. Choose the execution method only after the owner reviews this plan.

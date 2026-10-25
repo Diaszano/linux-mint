@@ -45,7 +45,7 @@ The options exposed by `setup.sh --help` are:
 
 Docker, new zram, earlyoom, user-wide Gradle settings, and swappiness/sysctl changes are off by default. Existing swap, zram, OOM policy, Docker provider, Docker services, and user Gradle settings are preserved unless an explicitly selected module is eligible and its conflict checks pass. Docker provider conflicts (including distro Docker versus Docker CE) are checked before package operations. Existing or unrecognized services are not silently replaced.
 
-The earlyoom option is intentionally unavailable: setup stops before package installation because the current implementation cannot guarantee that constrained builds are selected as earlyoom's first kill targets. It does not install earlyoom. Do not infer availability from the option appearing in `--help`.
+The `--earlyoom` option returns an unsupported-feature error before preflight, journaling, package, or service operations. It makes no host changes. Constrained-build kill priority is unverified, so leave it disabled and use `dev-build` for cgroup-limited builds.
 
 The zram module rejects existing zram devices, swap managers/configuration, conflicting units, indeterminate swap state, or incompatible swap priority. The swappiness module requires active compatible zram and rejects an existing conflicting `vm.swappiness` policy. Neither module disables or replaces existing swap or zram automatically.
 
