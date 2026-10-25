@@ -132,11 +132,8 @@ run bash "$ROOT/setup.sh" --dry-run --yes --docker --zram
 }
 
 @test "all opt ins and skip aliases are parsed without writes" {
-run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --skip kvm
+run bash "$ROOT/setup.sh" --dry-run --gradle-global --skip-mise --skip kvm
   [ "$status" -eq 0 ]
-  [[ "$output" == *'module=earlyoom'* ]]
-  [[ "$output" == *'earlyoom unavailable'* ]]
-  [[ "$output" != *'packages=earlyoom'* && "$output" != *'command=sudo apt-get install earlyoom'* ]]
   [[ "$output" == *'module=gradle-global'* ]]
 [[ "$output" == *'org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m'* ]]
   [[ "$output" != *'module=mise'* ]]
@@ -145,6 +142,15 @@ run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --ski
   [ "$status" -eq 0 ]
   [[ "$output" != *'module=docker'* ]]
   [[ "$output" != *'module=earlyoom'* ]]
+  assert_read_only
+}
+
+@test "earlyoom dry run returns unsupported before any preflight or write" {
+  run bash "$ROOT/setup.sh" --dry-run --earlyoom
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'earlyoom remains unavailable'* ]]
+  [[ "$output" == *'constrained-build kill priority is unverified'* ]]
+  [[ "$output" == *'No host changes were made'* ]]
   assert_read_only
 }
 
