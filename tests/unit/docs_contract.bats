@@ -96,10 +96,42 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "README labels full-tree ShellCheck baseline as non-green" {
+@test "README distinguishes warning-level ShellCheck gate from info baseline" {
 local docs="$ROOT/tests/README.md"
 grep -Fq 'shellcheck -x -S warning setup.sh tests/integration/run-vm.sh' "$docs"
-grep -Fq 'full-tree ShellCheck gate is currently **non-green**' "$docs"
-grep -Fq 'exits 1 with 39 existing diagnostic locations' "$docs"
+grep -Fq 'full-tree warning-severity gate' "$docs"
+grep -Fq '49 informational/style diagnostics, all severity `info`' "$docs"
+grep -Fq 'including five in `setup.sh`' "$docs"
+grep -Fq 'shfmt -i 2 -d lib/backup.sh' "$docs"
+grep -Fq 'lib/install-wrappers.sh' "$docs"
 grep -Fq 'task-17-report.md' "$docs"
+}
+
+@test "physical acceptance checklist captures evidence without claiming hardware results" {
+    local checklist="$ROOT/tests/acceptance/vaio-checklist.md"
+    local criterion control
+    [ -f "$checklist" ]
+    for criterion in {01..12}; do
+        grep -Fq "AC-$criterion" "$checklist"
+    done
+    grep -Fq 'PASS' "$checklist"
+    grep -Fq 'WARN' "$checklist"
+    grep -Fq 'FAIL' "$checklist"
+    grep -Fq 'NOT INSTALLED' "$checklist"
+    grep -Fq 'three comparable' "$checklist"
+    for control in cpu.max memory.high memory.max memory.swap.max pids.max memory.events memory.swap.events; do
+        grep -Fq "$control" "$checklist"
+    done
+    grep -Fq 'Android Studio' "$checklist"
+    grep -Fq 'x86_64 AVD' "$checklist"
+    grep -Fq '`-accel on`' "$checklist"
+    grep -Fq 'dev-build ./gradlew assembleDebug --no-daemon' "$checklist"
+    grep -Fq 'Docker only if the Docker module was explicitly enabled' "$checklist"
+    grep -Fq 'No physical VAIO installation, tuning, or acceptance workload has been performed' "$checklist"
+    grep -Fq 'earlyoom' "$checklist"
+    grep -Eiq 'earlyoom.*(unavailable|fail-closed)' "$checklist"
+    grep -Eiq 'earlyoom.*(WARN|NOT INSTALLED)' "$checklist"
+    ! grep -Eiq 'earlyoom.*PASS' "$checklist"
+    grep -Fq 'provisional' "$ROOT/docs/PERFORMANCE.md"
+    grep -Fq 'earlyoom' "$ROOT/docs/TROUBLESHOOTING.md"
 }
