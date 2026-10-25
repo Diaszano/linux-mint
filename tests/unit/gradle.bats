@@ -62,7 +62,7 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   before=$(sha256sum "$GRADLE_USER_HOME/gradle.properties")
   run gradle_plan --global
   [ "$status" -ne 0 ]
-  [[ "$output" == *'conflitante'* ]]
+  [[ "$output" == *'conflicting'* ]]
   [ "$before" = "$(sha256sum "$GRADLE_USER_HOME/gradle.properties")" ]
 }
 
@@ -77,7 +77,7 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   before=$(sha256sum "$GRADLE_USER_HOME/gradle.properties")
   run gradle_plan --global
   [ "$status" -ne 0 ]
-  [[ "$output" == *'conflitante'* ]]
+  [[ "$output" == *'conflicting'* ]]
   [ "$before" = "$(sha256sum "$GRADLE_USER_HOME/gradle.properties")" ]
 }
 
@@ -87,7 +87,7 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   before=$(sha256sum "$GRADLE_USER_HOME/gradle.properties")
   run gradle_plan --global
   [ "$status" -ne 0 ]
-  [[ "$output" == *'conflitante'* ]]
+  [[ "$output" == *'conflicting'* ]]
   [ "$before" = "$(sha256sum "$GRADLE_USER_HOME/gradle.properties")" ]
 }
 
@@ -98,7 +98,7 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   if GRADLE_USER_HOME="$GRADLE_TEST_ROOT/unsafe-parent/gradle-home" gradle_plan --global >"$BATS_TEST_TMPDIR/unsafe-preview" 2>&1; then
     return 1
   fi
-  grep -q 'permissões inseguras' "$BATS_TEST_TMPDIR/unsafe-preview"
+  grep -q 'unsafe permissions' "$BATS_TEST_TMPDIR/unsafe-preview"
   [ ! -e "$GRADLE_TEST_ROOT/unsafe-parent/gradle-home/gradle.properties" ]
 }
 
@@ -118,7 +118,7 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   printf '# user change\n' >>"$GRADLE_USER_HOME/gradle.properties"
   run "$ROOT/bin/dev-rollback" "$RUN_ID" --yes
   [ "$status" -ne 0 ]
-  [[ "$output" == *'manual'* || "$output" == *'conflict'* ]]
+  [[ "${output,,}" == *'manual'* || "${output,,}" == *'conflict'* ]]
   grep -Fxq 'custom.value=keep' "$GRADLE_USER_HOME/gradle.properties"
   grep -Fq '# user change' "$GRADLE_USER_HOME/gradle.properties"
 }

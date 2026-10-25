@@ -9,7 +9,7 @@ _GRADLE_END='# <<< vaio-fe16 gradle <<<'
 _GRADLE_BLOCK=$'# >>> vaio-fe16 gradle >>>\norg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m\norg.gradle.workers.max=4\norg.gradle.caching=true\norg.gradle.daemon.idletimeout=900000\n# <<< vaio-fe16 gradle <<<\n'
 
 _gradle_fail() {
-  printf 'Erro: %s\n' "$1" >&2
+  printf 'Error: %s\n' "$1" >&2
   return 1
 }
 
@@ -18,11 +18,11 @@ _gradle_safe_path() {
   while :; do
     read -r owner mode < <(stat -Lc '%u %a' -- "$path") || return 1
     [[ $owner == "$uid" || $owner == 0 ]] || {
-      _gradle_fail 'um diretório no caminho do Gradle pertence a outro usuário.'
+      _gradle_fail 'a directory in the Gradle path is owned by another user.'
       return 1
     }
     [[ $mode =~ ^[0-7]+$ ]] && (((8#$mode & 0022) == 0 || (8#$mode & 01000) != 0)) || {
-      _gradle_fail 'um diretório no caminho do Gradle tem permissões inseguras.'
+      _gradle_fail 'a directory in the Gradle path has unsafe permissions.'
       return 1
     }
     [[ $path == / ]] && return 0
@@ -35,23 +35,23 @@ _gradle_state() {
   local mode
   _GRADLE_HOME_DIR=${GRADLE_USER_HOME:-$HOME/.gradle}
   [[ $_GRADLE_HOME_DIR == /* && $_GRADLE_HOME_DIR != *$'\n'* ]] || {
-    _gradle_fail 'GRADLE_USER_HOME deve ser um caminho absoluto.'
+    _gradle_fail 'GRADLE_USER_HOME must be an absolute path.'
     return 1
   }
   if [[ -d $_GRADLE_HOME_DIR && ! -L $_GRADLE_HOME_DIR ]]; then
     [[ -O $_GRADLE_HOME_DIR ]] || {
-      _gradle_fail 'GRADLE_USER_HOME pertence a outro usuário.'
+      _gradle_fail 'GRADLE_USER_HOME is owned by another user.'
       return 1
     }
     _GRADLE_HOME_DIR=$(realpath -e -- "$_GRADLE_HOME_DIR") || return 1
     _gradle_safe_path "$_GRADLE_HOME_DIR" || return 1
     mode=$(stat -c '%a' -- "$_GRADLE_HOME_DIR") || return 1
     [[ $mode =~ ^[0-7]+$ ]] && (((8#$mode & 0022) == 0)) || {
-      _gradle_fail 'GRADLE_USER_HOME tem permissões inseguras.'
+      _gradle_fail 'GRADLE_USER_HOME has unsafe permissions.'
       return 1
     }
   elif [[ -e $_GRADLE_HOME_DIR || -L $_GRADLE_HOME_DIR ]]; then
-    _gradle_fail 'GRADLE_USER_HOME não é um diretório seguro.'
+    _gradle_fail 'GRADLE_USER_HOME is not a safe directory.'
     return 1
   fi
   _GRADLE_TARGET=$_GRADLE_HOME_DIR/gradle.properties
@@ -59,12 +59,12 @@ _gradle_state() {
   _GRADLE_IDENTITY=missing
   if [[ -e $_GRADLE_TARGET || -L $_GRADLE_TARGET ]]; then
     [[ -f $_GRADLE_TARGET && ! -L $_GRADLE_TARGET && -O $_GRADLE_TARGET ]] || {
-      _gradle_fail 'gradle.properties deve ser um arquivo regular pertencente ao usuário.'
+      _gradle_fail 'gradle.properties must be a regular file owned by the user.'
       return 1
     }
     mode=$(stat -c '%a' -- "$_GRADLE_TARGET") || return 1
     [[ $mode =~ ^[0-7]+$ ]] && (((8#$mode & 0022) == 0)) || {
-      _gradle_fail 'gradle.properties tem permissões inseguras.'
+      _gradle_fail 'gradle.properties has unsafe permissions.'
       return 1
     }
     _GRADLE_BEFORE=$(sha256sum -- "$_GRADLE_TARGET") || return 1
@@ -83,7 +83,7 @@ _gradle_conflicts() {
     if ((continuing == 0)) && [[ $line == "$_GRADLE_BEGIN" ]]; then
       starts=$((starts + 1))
       ((starts == 1)) || {
-        _gradle_fail 'marcadores Gradle duplicados.'
+        _gradle_fail 'duplicate Gradle markers.'
         return 1
       }
       in_block=1
@@ -92,7 +92,7 @@ _gradle_conflicts() {
     if ((continuing == 0)) && [[ $line == "$_GRADLE_END" ]]; then
       ends=$((ends + 1))
       ((ends == 1 && in_block == 1)) || {
-        _gradle_fail 'bloco Gradle malformado.'
+        _gradle_fail 'malformed Gradle block.'
         return 1
       }
       in_block=0
@@ -115,24 +115,24 @@ _gradle_conflicts() {
     fi
     continuing=0
     if [[ $logical =~ $pattern ]]; then
-      _gradle_fail 'propriedade Gradle conflitante fora do bloco gerenciado.'
+      _gradle_fail 'conflicting Gradle property outside the managed block.'
       return 1
     fi
     logical=''
   done <"$_GRADLE_TARGET"
   if [[ -n $logical && $logical =~ $pattern ]]; then
-    _gradle_fail 'propriedade Gradle conflitante fora do bloco gerenciado.'
+    _gradle_fail 'conflicting Gradle property outside the managed block.'
     return 1
   fi
   ((starts == ends && in_block == 0)) || {
-    _gradle_fail 'bloco Gradle malformado.'
+    _gradle_fail 'malformed Gradle block.'
     return 1
   }
   if ((starts == 1)); then
     existing=$(awk -v begin="$_GRADLE_BEGIN" -v end="$_GRADLE_END" '$0 == begin { in_block=1 } in_block { print } $0 == end { exit }' "$_GRADLE_TARGET")
     expected=${_GRADLE_BLOCK%$'\n'}
     [[ $existing == "$expected" ]] || {
-      _gradle_fail 'bloco Gradle gerenciado foi editado; revisão manual necessária.'
+      _gradle_fail 'managed Gradle block was edited; manual review is required.'
       return 1
     }
   fi
@@ -143,19 +143,19 @@ gradle_plan() {
   '')
     (($# == 0)) || return 2
     printf 'Dica por projeto: use dev-build ./gradlew assembleDebug --no-daemon\n'
-    printf 'Nenhum arquivo Gradle será alterado por esta recomendação.\n'
+    printf 'This recommendation will not modify any Gradle files.\n'
     ;;
   --global)
     (($# == 1)) || return 2
     _gradle_state || return 1
     _gradle_conflicts || return 1
     GRADLE_PLAN_TOKEN=$_GRADLE_TOKEN
-    printf 'Prévia global: %s\n' "$_GRADLE_TARGET"
+    printf 'Global preview: %s\n' "$_GRADLE_TARGET"
     printf '%s' "$_GRADLE_BLOCK"
     printf 'plan_token=%s\n' "$GRADLE_PLAN_TOKEN"
     ;;
   *)
-    _gradle_fail 'opção gradle_plan inválida.'
+    _gradle_fail 'invalid gradle_plan option.'
     return 2
     ;;
   esac
@@ -164,21 +164,21 @@ gradle_plan() {
 gradle_global_apply() {
   local run=${1:-} token=${4:-} temporary
   [[ $# -eq 4 && ${2:-} == --gradle-global && ${3:-} == --confirmed && -n $token ]] || {
-    _gradle_fail 'aplicação exige --gradle-global e confirmação do token da prévia.'
+    _gradle_fail 'applying changes requires --gradle-global and the confirmed preview token.'
     return 2
   }
   [[ $run =~ ^[0-9]{20}-[0-9a-f]{16}$ ]] || {
-    _gradle_fail 'identificador de execução inválido.'
+    _gradle_fail 'invalid run ID.'
     return 2
   }
   _gradle_state || return 1
   _gradle_conflicts || return 1
   [[ $token == "$_GRADLE_TOKEN" ]] || {
-    _gradle_fail 'Gradle mudou após a prévia; gere e confirme uma nova prévia.'
+    _gradle_fail 'Gradle state changed after preview; create and confirm a new preview.'
     return 1
   }
   [[ -d $_GRADLE_HOME_DIR && ! -L $_GRADLE_HOME_DIR ]] || {
-    _gradle_fail 'crie GRADLE_USER_HOME antes de aplicar as propriedades globais.'
+    _gradle_fail 'create GRADLE_USER_HOME before applying global properties.'
     return 1
   }
   if [[ $_GRADLE_BEFORE == missing ]]; then

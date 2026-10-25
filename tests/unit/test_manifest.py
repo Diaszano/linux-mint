@@ -158,7 +158,7 @@ class ManifestTests(unittest.TestCase):
         result = self.cli('list')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), [healthy])
-        self.assertIn('incompleta', result.stderr)
+        self.assertIn('incomplete', result.stderr)
         self.assertEqual(self.cli('verify', healthy).returncode, 0)
         incomplete = [p.name for p in self.journal(healthy).parent.parent.iterdir() if p.name != healthy]
         self.assertEqual(len(incomplete), 1)

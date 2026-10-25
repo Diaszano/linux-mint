@@ -35,7 +35,7 @@ package_selection() {
       fi
       ;;
     *)
-      printf 'Erro: módulo de pacotes desconhecido: %s\n' "$1" >&2
+      printf 'Error: unknown package module: %s\n' "$1" >&2
       return 1
       ;;
   esac
@@ -60,7 +60,7 @@ _apt_memory_manager() {
 _apt_barrier() {
   local module=$1 package status evidence device type size priority extra service_line skip_line=no requested=none candidate
   preflight_install_inventory || {
-    printf 'Erro: inventário de pacotes, swap ou serviços indeterminado.\n' >&2
+    printf 'Error: package, swap, or service inventory is indeterminate.\n' >&2
     return 1
   }
   evidence=${PREFLIGHT_SERVICES,,}
@@ -79,7 +79,7 @@ _apt_barrier() {
     [[ $status == *' ok installed' ]] || continue
     case "$module:$(_apt_memory_manager "$package")" in
       zram:zram | earlyoom:earlyoom)
-        printf 'Erro: gerenciador existente impede %s: %s\n' "$module" "$package" >&2
+        printf 'Error: existing manager blocks %s: %s\n' "$module" "$package" >&2
         return 1
         ;;
     esac
@@ -91,24 +91,24 @@ _apt_barrier() {
       extra=''
     fi
     [[ $device == /* && -n $type && $size =~ ^[0-9]+([.,][0-9]+)?[KMGTPEB]?$ && $priority =~ ^-?[0-9]+$ && -z $extra ]] || {
-      printf 'Erro: estado do swap indeterminado.\n' >&2
+      printf 'Error: swap state is indeterminate.\n' >&2
       return 1
     }
     if [[ $module == zram ]] && ((priority >= 100)); then
-      printf 'Erro: prioridade de swap existente impede a política zram proposta.\n' >&2
+      printf 'Error: existing swap priority conflicts with the proposed zram policy.\n' >&2
       return 1
     fi
   done <<<"$PREFLIGHT_SWAPS"
   case "$module" in
     zram)
       if [[ -n $PREFLIGHT_ZRAM || ${PREFLIGHT_SWAPS,,} == *zram* || $evidence =~ (zram|zswap|zramswap|swap-policy) ]]; then
-        printf 'Erro: swap ou unidade zram existente; migração exige revisão.\n' >&2
+        printf 'Error: existing swap or zram unit found; migration requires review.\n' >&2
         return 1
       fi
       ;;
     earlyoom)
       if [[ $evidence =~ (earlyoom|oomd|nohang|low-memory-monitor|oom-manager) ]]; then
-        printf 'Erro: unidade OOM existente; preserve a política atual.\n' >&2
+        printf 'Error: an existing OOM unit was found; preserve the current policy.\n' >&2
         return 1
       fi
       ;;
@@ -124,7 +124,7 @@ _apt_barrier() {
   [[ $ce != yes ]] || APT_DOCKER_PROVIDER=ce
   [[ $distro != yes ]] || APT_DOCKER_PROVIDER=distro
   if [[ $module == docker && $ce == yes && $distro == yes ]]; then
-    printf 'Erro: provedores Docker CE e distro em conflito.\n' >&2
+    printf 'Error: Docker CE and distribution providers conflict.\n' >&2
     return 1
   fi
   for package in "$@"; do
@@ -151,13 +151,13 @@ _apt_barrier() {
     case "$package" in
       docker.io | docker-compose-v2 | containerd | runc)
         [[ $ce == no ]] || {
-          printf 'Erro: preserve o provedor Docker CE.\n' >&2
+          printf 'Error: preserve the Docker CE provider.\n' >&2
           return 1
         }
         ;;
       docker-ce | docker-ce-cli | containerd.io | docker-compose-plugin | docker-buildx-plugin)
         [[ $distro == no ]] || {
-          printf 'Erro: preserve o provedor Docker da distro.\n' >&2
+          printf 'Error: preserve the distribution Docker provider.\n' >&2
           return 1
         }
         ;;
@@ -181,7 +181,7 @@ apt_plan() {
     case "$module:$package:$(_apt_memory_manager "$package")" in
       zram:zram-tools:zram | earlyoom:earlyoom:earlyoom | *:*:none) ;;
       *)
-        printf 'Erro: gerenciador fora do módulo selecionado.\n' >&2
+        printf 'Error: manager is outside the selected module.\n' >&2
         return 1
         ;;
     esac
@@ -193,31 +193,31 @@ apt_plan() {
   APT_PLAN_TRANSACTION=''
   if ((${#APT_PLAN_MISSING[@]})); then
     APT_PLAN_TRANSACTION=$(APT_CONFIG="$APT_PLAN_CONFIG" LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
-      printf 'Erro: simulação APT falhou; verifique os índices e a conectividade.\n%s\n' "$APT_PLAN_TRANSACTION" >&2
+      printf 'Error: APT simulation failed; check package indexes and network connectivity.\n%s\n' "$APT_PLAN_TRANSACTION" >&2
       return 1
     }
     while IFS= read -r line; do
       if [[ $line =~ ^Inst[[:space:]]+[^[:space:]]+[[:space:]]+\[ ]]; then
-        printf 'Erro: transação tenta atualizar pacote existente.\n' >&2
+        printf 'Error: transaction attempts to upgrade an installed package.\n' >&2
         return 1
       fi
       case "$line" in
         Remv\ *)
-          printf 'Erro: transação tenta remover pacote existente.\n' >&2
+          printf 'Error: transaction attempts to remove an installed package.\n' >&2
           return 1
           ;;
         Inst\ *)
           read -r _ name _ <<<"$line"
           case "$APT_DOCKER_PROVIDER:${name%%:*}" in
             ce:docker.io | ce:docker-compose-v2 | ce:containerd | ce:runc | distro:docker-ce | distro:docker-ce-cli | distro:containerd.io | distro:docker-compose-plugin | distro:docker-buildx-plugin)
-              printf 'Erro: dependência tenta misturar provedores Docker.\n' >&2
+              printf 'Error: dependency resolution mixes Docker providers.\n' >&2
               return 1
               ;;
           esac
           case "$module:${name%%:*}:$(_apt_memory_manager "$name")" in
             zram:zram-tools:zram | earlyoom:earlyoom:earlyoom | *:*:none) ;;
             *)
-              printf 'Erro: dependência inclui gerenciador não selecionado.\n' >&2
+              printf 'Error: dependency resolution includes an unselected manager.\n' >&2
               return 1
               ;;
           esac
@@ -269,23 +269,23 @@ printf 'Error: earlyoom installation is blocked until constrained-build kill pri
 return 1
 fi
   [[ $# -ge 5 && ${3:-} == --confirmed && -n ${APT_PLAN_TOKEN:-} && $token == "$APT_PLAN_TOKEN" ]] || {
-    printf 'Erro: aplicação exige a prévia confirmada.\n' >&2
+    printf 'Error: applying changes requires the confirmed preview.\n' >&2
     return 1
   }
   shift 4
   [[ $(_apt_signature "$module" "$@" "${APT_CONFIG:-}") == "$APT_PLAN_REQUEST" ]] || return 1
   _apt_barrier "$module" "$@" || return 1
   [[ $(_apt_signature "$PREFLIGHT_PACKAGES" "$PREFLIGHT_CONFLICT_SERVICES" "$PREFLIGHT_SWAPS" "$PREFLIGHT_ZRAM") == "$APT_PLAN_INVENTORY" ]] || {
-    printf 'Erro: estado mudou após a prévia; simule e confirme novamente.\n' >&2
+    printf 'Error: state changed after preview; simulate and confirm again.\n' >&2
     return 1
   }
   ((${#APT_PLAN_MISSING[@]})) || return 0
   simulation=$(APT_CONFIG="$APT_PLAN_CONFIG" LC_ALL=C apt-get --simulate --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" 2>&1) || {
-    printf 'Erro: nova simulação APT falhou; nenhuma instalação iniciada.\n' >&2
+    printf 'Error: new APT simulation failed; no installation was started.\n' >&2
     return 1
   }
   [[ $simulation == "$APT_PLAN_TRANSACTION" ]] || {
-    printf 'Erro: transação APT mudou; simule e confirme novamente.\n' >&2
+    printf 'Error: APT transaction changed; simulate and confirm again.\n' >&2
     return 1
   }
   before_inventory=$PREFLIGHT_PACKAGES
@@ -296,7 +296,7 @@ fi
   sudo env "APT_CONFIG=$APT_PLAN_CONFIG" DEBIAN_FRONTEND=noninteractive apt-get --yes --no-install-recommends --no-remove --no-upgrade install "${APT_PLAN_MISSING[@]}" || result=$?
   apt_result=$result
   if ! preflight_install_inventory audit; then
-    printf 'Erro: inventário após APT indeterminado; consulte a auditoria anterior.\n' >&2
+    printf 'Error: post-APT inventory is indeterminate; see the earlier audit.\n' >&2
     PREFLIGHT_SERVICES+=$'\ninventory_status=unknown'
     result=1
   fi
@@ -314,7 +314,7 @@ fi
   done
   APT_PLAN_TOKEN=''
   if [[ $before_inventory != "$PREFLIGHT_PACKAGES" || $result != 0 ]]; then
-    printf 'Auditoria APT: versões e estados dos serviços registrados antes/depois; revise ativações por scripts do pacote.\n'
+    printf 'APT audit: package versions and service states before/after were recorded; review any service activation by package scripts.\n'
   fi
   return "$result"
 }

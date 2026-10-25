@@ -84,23 +84,23 @@ virtualization_require_kvm() {
     local sdk=$1 emulator output
     emulator=$sdk/emulator/emulator
     _virtualization_cpu_flag /proc/cpuinfo || {
-        printf 'Erro: CPU virtualization (SVM/VMX) is unavailable; check firmware settings.\n' >&2
+        printf 'Error: CPU virtualization (SVM/VMX) is unavailable; check firmware settings.\n' >&2
         return 1
     }
     _virtualization_kvm_device /dev/kvm && _virtualization_kvm_accessible /dev/kvm || {
-        printf 'Erro: /dev/kvm is missing or inaccessible; check KVM installation and user permissions.\n' >&2
+        printf 'Error: /dev/kvm is missing or inaccessible; check KVM installation and user permissions.\n' >&2
         return 1
     }
     if command -v kvm-ok >/dev/null 2>&1 && ! kvm-ok >/dev/null 2>&1; then
-        printf 'Erro: kvm-ok reports that KVM cannot be used.\n' >&2
+        printf 'Error: kvm-ok reports that KVM cannot be used.\n' >&2
         return 1
     fi
     output=$("$emulator" -accel-check 2>&1) || {
-        printf 'Erro: Android Emulator KVM acceleration check failed.\n%s\n' "$output" >&2
+        printf 'Error: Android Emulator KVM acceleration check failed.\n%s\n' "$output" >&2
         return 1
     }
     grep -Eqi 'KVM.*installed and usable' <<<"$output" || {
-        printf 'Erro: Android Emulator did not confirm usable KVM acceleration.\n%s\n' "$output" >&2
+        printf 'Error: Android Emulator did not confirm usable KVM acceleration.\n%s\n' "$output" >&2
         return 1
     }
 }

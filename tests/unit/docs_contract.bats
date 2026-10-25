@@ -135,3 +135,13 @@ grep -Fq 'task-17-report.md' "$docs"
     grep -Fq 'provisional' "$ROOT/docs/PERFORMANCE.md"
     grep -Fq 'earlyoom' "$ROOT/docs/TROUBLESHOOTING.md"
 }
+
+@test "runtime diagnostics and prompts use English" {
+    local source
+    for source in "$ROOT"/lib/gradle.sh "$ROOT"/lib/memory.sh "$ROOT"/lib/packages.sh "$ROOT"/lib/manifest.py "$ROOT"/lib/preflight.sh "$ROOT"/lib/virtualization.sh "$ROOT"/bin/dev-rollback; do
+        if grep -Eiq 'Uso:|Erro:|inventário|módulo|simulação|prévia|Nenhum arquivo|Remover arquivo criado|Restaurar|Recuperação|Restauração|Conflito|Revisão manual|Digite sim|permissões inseguras|transação APT mudou|interrupção|dependências|nenhuma remoção|execução inválida|estado ou caminho inválido|Rollback cancelado' "$source"; then
+            printf 'Portuguese user-facing text remains in %s\n' "$source" >&2
+            false
+        fi
+    done
+}

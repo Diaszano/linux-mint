@@ -14,7 +14,7 @@ preflight_host() {
   done <<< "$os_release"
   arch=$(uname -m) || return 1
   if [[ $os_id != linuxmint || ! $os_version =~ ^22([.]|$) || $ubuntu_codename != noble || $arch != x86_64 ]]; then
-    printf 'Erro: requer Linux Mint 22.x (Noble) x86_64.\n' >&2
+    printf 'Error: Linux Mint 22.x (Noble) x86_64 is required.\n' >&2
     return 1
   fi
   threads=$(nproc) || return 1

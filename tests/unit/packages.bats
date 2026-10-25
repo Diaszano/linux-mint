@@ -188,7 +188,7 @@ library() { bash -c 'set -euo pipefail; source "$ROOT/lib/packages.sh"; eval "$1
   printf 'Inst docker.io (24.0 Ubuntu)\n' >"$FIXTURE/simulation"
   run library 'apt_plan baseline hello'
   [ "$status" != 0 ]
-  [[ "$output" == *provedores* ]]
+  [[ "$output" == *providers* ]]
   rm "$PACKAGE_LOG"
   printf 'garbled swap output\n' >"$FIXTURE/swaps"
   run library 'apt_plan baseline hello'
@@ -205,7 +205,7 @@ library() { bash -c 'set -euo pipefail; source "$ROOT/lib/packages.sh"; eval "$1
         apt_apply "$run_id" baseline --confirmed "$APT_PLAN_TOKEN" hello
     '
   [ "$status" != 0 ]
-  [[ "$output" == *'transação APT mudou'* ]]
+  [[ "$output" == *'APT transaction changed'* ]]
   [ "$(wc -l <"$PACKAGE_LOG")" = 2 ]
   [ -z "$(find "$XDG_STATE_HOME" -name packages-baseline-before.json)" ]
 }
@@ -234,7 +234,7 @@ library() { bash -c 'set -euo pipefail; source "$ROOT/lib/packages.sh"; eval "$1
         apt_apply unused baseline --confirmed "$APT_PLAN_TOKEN" hello
     '
   [ "$status" != 0 ]
-  [[ "$output" == *'estado mudou'* ]]
+  [[ "$output" == *'state changed'* ]]
   [ "$(wc -l <"$PACKAGE_LOG")" = 1 ]
 }
 
@@ -251,7 +251,7 @@ library() { bash -c 'set -euo pipefail; source "$ROOT/lib/packages.sh"; eval "$1
     printf 'Inst %s (1.0 Ubuntu)\n' "$package" >"$FIXTURE/simulation"
     run library 'apt_plan baseline hello'
     [ "$status" != 0 ]
-    [[ "$output" == *gerenciador* ]]
+    [[ "$output" == *manager* ]]
   done
 }
 
@@ -343,7 +343,7 @@ PY
     printf 'Inst %s (1.0 Ubuntu)\n' "$package" >"$FIXTURE/simulation"
     run library 'apt_plan baseline hello'
     [ "$status" != 0 ]
-    [[ "$output" == *gerenciador* ]]
+    [[ "$output" == *manager* ]]
     rm "$PACKAGE_LOG"
     printf '%s\tinstall ok installed\t1.0\n' "$package" >"$FIXTURE/packages"
     run library 'apt_plan earlyoom earlyoom'

@@ -3,22 +3,22 @@
 _MEMORY_LIB=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 _memory_fail() {
-  printf 'Erro: %s\n' "$1" >&2
+  printf 'Error: %s\n' "$1" >&2
   return 1
 }
 
 _memory_inventory() {
   declare -F preflight_install_inventory >/dev/null || source "$_MEMORY_LIB/preflight.sh"
   preflight_install_inventory || {
-    _memory_fail 'inventário de memória indeterminado; nenhuma alteração aplicada.'
+    _memory_fail 'memory inventory is indeterminate; no changes were applied.'
     return 1
   }
   [[ ${PREFLIGHT_PACKAGES_STATE:-unknown} == known ]] || {
-    _memory_fail 'inventário de pacotes indeterminado.'
+    _memory_fail 'package inventory is indeterminate.'
     return 1
   }
   [[ ${PREFLIGHT_SERVICES:-} != *unknown* && ${PREFLIGHT_CONFLICT_SERVICES:-} != *unknown* ]] || {
-    _memory_fail 'inventário de serviços indeterminado.'
+    _memory_fail 'service inventory is indeterminate.'
     return 1
   }
 }
@@ -28,7 +28,7 @@ _memory_package_contract() {
   case $module in
   zram)
     candidate=$(apt-cache policy zram-tools 2>/dev/null) || return 1
-    [[ $candidate == *'Candidate: 0.3.3.1-1.1'* ]] || _memory_fail 'pacote zram-tools não revisado; configure manualmente.'
+    [[ $candidate == *'Candidate: 0.3.3.1-1.1'* ]] || _memory_fail 'the zram-tools package is not reviewed; configure it manually.'
     ;;
   *) return 1 ;;
   esac
@@ -72,7 +72,7 @@ _memory_sysctl_conflict() {
 _memory_require_unambiguous_swappiness() {
   local source
   source=$(_memory_sysctl_conflict) || return 0
-  _memory_fail "configuração vm.swappiness conflitante em $source; preserve a política atual."
+  _memory_fail "conflicting vm.swappiness setting in $source; preserve the current policy."
 }
 
 _memory_zram_capable() {
@@ -85,25 +85,25 @@ _memory_conflict() {
     [[ $status == *' ok installed' ]] || continue
     case "$module:$package" in
     zram:*zram* | zram:*zswap* | zram:systemd-swap | zram:swapspace | zram:dphys-swapfile)
-      _memory_fail "gerenciador de swap existente impede zram: $package" || return 1
+      _memory_fail "existing swap manager blocks zram: $package" || return 1
       ;;
     earlyoom:earlyoom | earlyoom:systemd-oomd | earlyoom:oomd | earlyoom:nohang | earlyoom:low-memory-monitor)
-      _memory_fail "gerenciador OOM existente impede earlyoom: $package" || return 1
+      _memory_fail "existing OOM manager blocks earlyoom: $package" || return 1
       ;;
     esac
   done <<<"${PREFLIGHT_PACKAGES:-}"
   case $module in
   zram)
     [[ -z ${PREFLIGHT_ZRAM:-} ]] || {
-      _memory_fail 'zram existente; preserve a configuração atual.'
+      _memory_fail 'zram is already configured; preserve the current configuration.'
       return 1
     }
     [[ ${PREFLIGHT_SWAPS,,} != *zram* ]] || {
-      _memory_fail 'swap zram ativo; preserve a configuração atual.'
+      _memory_fail 'zram swap is active; preserve the current configuration.'
       return 1
     }
     [[ $evidence != *zram* && $evidence != *swap-policy* ]] || {
-      _memory_fail 'unidade ou política zram existente; preserve a configuração atual.'
+      _memory_fail 'an existing zram unit or policy was found; preserve the current configuration.'
       return 1
     }
     while read -r device type size priority extra; do
@@ -113,22 +113,22 @@ _memory_conflict() {
         extra=''
       fi
       [[ $device == /* && -n $type && $size =~ ^[0-9]+([.,][0-9]+)?[KMGTPEB]?$ && $priority =~ ^-?[0-9]+$ && -z $extra ]] || {
-        _memory_fail 'estado do swap indeterminado.'
+        _memory_fail 'swap state is indeterminate.'
         return 1
       }
       ((priority < 100)) || {
-        _memory_fail 'prioridade de swap existente impede zram.'
+        _memory_fail 'existing swap priority blocks zram.'
         return 1
       }
     done <<<"${PREFLIGHT_SWAPS:-}"
     ;;
   earlyoom)
     [[ $evidence != *earlyoom* && $evidence != *oomd* && $evidence != *nohang* && $evidence != *oom-manager* ]] || {
-      _memory_fail 'gerenciador OOM existente; preserve a política atual.'
+      _memory_fail 'an existing OOM manager was found; preserve the current policy.'
       return 1
     }
     [[ ! -e /etc/default/earlyoom ]] || {
-      _memory_fail 'configuração earlyoom existente; preserve a política atual.'
+      _memory_fail 'an existing earlyoom configuration was found; preserve the current policy.'
       return 1
     }
     ;;
@@ -143,18 +143,18 @@ memory_plan() {
     case $1 in
     --zram | --earlyoom)
       [[ -z $module ]] || {
-        _memory_fail 'selecione somente uma ação de memória.'
+        _memory_fail 'select only one memory action.'
         return 2
       }
       module=${1#--}
       ;;
     --swappiness)
       (($# >= 2)) && [[ $2 =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((10#$2 <= 200)) || {
-        _memory_fail 'valor swappiness inválido.'
+        _memory_fail 'invalid swappiness value.'
         return 2
       }
       [[ -z $module ]] || {
-        _memory_fail 'selecione somente uma ação de memória.'
+        _memory_fail 'select only one memory action.'
         return 2
       }
       module=swappiness
@@ -162,7 +162,7 @@ memory_plan() {
       shift
       ;;
     *)
-      _memory_fail "opção de memória desconhecida: $1"
+      _memory_fail "unknown memory option: $1"
       return 2
       ;;
     esac
@@ -170,7 +170,7 @@ memory_plan() {
   done
   _memory_inventory || return 1
   if [[ -z $module ]]; then
-    printf 'memória: preserve (preserving) swap, zram, OOM e sysctls existentes.\n'
+    printf 'Memory: preserve existing swap, zram, OOM services, and sysctl settings.\n'
     return 0
   fi
   case $module in
@@ -178,12 +178,12 @@ memory_plan() {
     _memory_conflict "$module" || return 1
     if [[ $module == zram ]]; then
       _memory_zram_capable || {
-        _memory_fail 'módulo zram indisponível no kernel atual.'
+        _memory_fail 'the zram module is unavailable in the current kernel.'
         return 1
       }
     fi
     if [[ $module == zram ]]; then
-      [[ ${PREFLIGHT_SWAPS:-} == *$'\t'* ]] || printf 'Aviso: nenhum disk swap detectado; nenhum será criado.\n'
+      [[ ${PREFLIGHT_SWAPS:-} == *$'\t'* ]] || printf 'Warning: no disk swap detected; none will be created.\n'
       printf 'zram-tools: ALGO=lz4 PERCENT=50 PRIORITY=100; zramswap.service\n'
     else
       MEMORY_PLAN_SUPPORTED=no
@@ -192,7 +192,7 @@ memory_plan() {
     ;;
   swappiness)
     _memory_has_zram || {
-      _memory_fail 'swappiness exige zram ativo e compatível.'
+      _memory_fail 'swappiness requires active compatible zram.'
       return 1
     }
     _memory_require_unambiguous_swappiness || return 1
@@ -207,7 +207,7 @@ memory_plan() {
 memory_apply() {
   local run=${1:-} module=${2:-} token=${3:-} config unit prior_enabled prior_active mask_set=no result=0 package APT_MEMORY_MASKED_UNIT=''
   [[ -n $run && $module =~ ^(zram|earlyoom|swappiness)$ && -n $token && $token == "${MEMORY_PLAN_TOKEN:-}" && $module == "${MEMORY_PLAN_MODULE:-}" ]] || {
-    _memory_fail 'memory_apply exige módulo e token da prévia confirmada.'
+    _memory_fail 'memory_apply requires a module and confirmed preview token.'
     return 2
   }
   if [[ $module == earlyoom && ${MEMORY_PLAN_SUPPORTED:-yes} != yes ]]; then
@@ -222,7 +222,7 @@ memory_apply() {
     ;;
   swappiness)
     _memory_has_zram || {
-      _memory_fail 'swappiness exige zram ativo e compatível.'
+      _memory_fail 'swappiness requires active compatible zram.'
       return 1
     }
     _memory_require_unambiguous_swappiness || return 1
@@ -234,7 +234,7 @@ memory_apply() {
     ;;
   esac
   if [[ $module == zram ]]; then _memory_zram_capable || {
-    _memory_fail 'módulo zram indisponível no kernel atual.'
+    _memory_fail 'the zram module is unavailable in the current kernel.'
     return 1
   }; fi
   if [[ $module == swappiness ]]; then
@@ -251,7 +251,7 @@ memory_apply() {
     prior_active=no
     systemctl is-active --quiet "$unit" && prior_active=yes
     [[ $prior_active == no && $prior_enabled != masked && $prior_enabled != masked-runtime ]] || {
-      _memory_fail "unidade $unit já está ativa ou mascarada; preserve seu estado."
+      _memory_fail "unit $unit is already active or masked; preserve its current state."
       return 1
     }
     python3 "$_MEMORY_LIB/memory_file.py" audit "$run" "$module" before "{\"enabled\":\"$prior_enabled\",\"active\":\"$prior_active\"}" || return 1

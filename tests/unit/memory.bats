@@ -170,7 +170,7 @@ plan() {
 @test "memory apply requires the exact plan token" {
   run bash -c 'source "$ROOT/lib/memory.sh"; MEMORY_PLAN_MODULE=zram; MEMORY_PLAN_TOKEN=approved; memory_apply run-id zram wrong'
   [ "$status" -ne 0 ]
-  [[ "$output" == *'token da prévia confirmada'* ]]
+  [[ "$output" == *'confirmed preview token'* ]]
 }
 
 @test "rollback refuses to stop zram after activation may have begun" {

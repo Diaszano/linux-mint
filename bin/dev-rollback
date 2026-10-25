@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/lib/rollback.sh"
 
 usage() {
-    printf 'Uso: dev-rollback --list | RUN_ID [--dry-run | --yes]\n'
+    printf 'Usage: dev-rollback --list | RUN_ID [--dry-run | --yes]\n'
 }
 
 if [[ $# -eq 1 && $1 == --list ]]; then
@@ -25,9 +25,9 @@ case ${2:-} in
 --yes) rollback_apply "$run_id" ;;
 '')
     rollback_preview "$run_id"
-    printf 'Restaurar alterações desta execução? Digite sim: ' >&2
-    if ! read -r answer || [[ $answer != sim ]]; then
-        printf 'Rollback cancelado.\n' >&2
+    printf 'Restore changes from this run? Type yes: ' >&2
+    if ! read -r answer || [[ $answer != yes ]]; then
+        printf 'Rollback cancelled.\n' >&2
         exit 1
     fi
     rollback_apply "$run_id"

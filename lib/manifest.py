@@ -518,17 +518,17 @@ def manual_file(snapshot):
     import shlex
     target = shlex.quote(snapshot['path'])
     if snapshot['backup']:
-        print('Recuperação manual, após revisar o destino: cp --preserve=mode,ownership,timestamps -- '
+        print('Manual recovery: review the destination, then run: cp --preserve=mode,ownership,timestamps -- '
               + shlex.quote(snapshot['backup']) + ' ' + target)
     else:
-        print('Recuperação manual, após revisar o arquivo criado: rm -- ' + target)
+        print('Manual recovery: review the created file, then run: rm -- ' + target)
 
 
 def rollback_file(fd, index, record, progress, apply):
     snapshot = record['snapshot']
     path = snapshot['path']
     if record['intent']:
-        print('Interrupção sem confirmação aplicada: ' + path)
+        print('Unconfirmed interrupted rollback was applied: ' + path)
         manual_file(snapshot)
         return False
     try:
@@ -538,15 +538,15 @@ def rollback_file(fd, index, record, progress, apply):
                 info is None or (stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
                 == (snapshot['mode'], snapshot['uid'], snapshot['gid']))
             if progress == 'intent' and restored:
-                print('Restauração já efetuada: ' + path)
+                print('Restore already completed: ' + path)
                 if apply:
                     append_event(fd, dict(event='rollback', operation=index, status='applied'))
                 return True
             if digest(current) != record['applied']['applied_sha256']:
-                print('Conflito: arquivo alterado; ignorado: ' + path)
+                print('Conflict: modified file skipped: ' + path)
                 manual_file(snapshot)
                 return False
-            print(('Restaurar: ' if snapshot['backup'] else 'Remover arquivo criado: ') + path)
+            print(('Restore: ' if snapshot['backup'] else 'Remove created file: ') + path)
             if not apply:
                 return True
             if progress is None:
@@ -583,7 +583,7 @@ def rollback_file(fd, index, record, progress, apply):
             append_event(fd, dict(event='rollback', operation=index, status='applied'))
             return True
     except (OSError, UnsafeState):
-        print('Conflito ou falha de restauração; ignorado: ' + path)
+        print('Conflict or restore failure; skipped: ' + path)
         manual_file(snapshot)
         return False
 
@@ -599,13 +599,13 @@ def manual_service(event):
     if desired[1]:
         actions.append('start')
     for action in actions:
-        print('Recuperação manual, após revisar o serviço: ' + command + action + ' ' + event['unit'])
+        print('Manual recovery: review the service, then run: ' + command + action + ' ' + event['unit'])
 
 
 def rollback_service(fd, index, record, progress, apply):
     first, last = record['first'], record['last']
     if record['pending']:
-        print('Interrupção sem confirmação aplicada do serviço: ' + first['unit'])
+        print('Unconfirmed interrupted service rollback was applied: ' + first['unit'])
         manual_service(first)
         return False
     current = query_service(last)
@@ -615,10 +615,10 @@ def rollback_service(fd, index, record, progress, apply):
             append_event(fd, dict(event='rollback', operation=index, status='applied'))
         return True
     if current != service_state(last, 'applied'):
-        print('Conflito: serviço alterado; ignorado: ' + last['unit'])
+        print('Conflict: modified service skipped: ' + last['unit'])
         manual_service(first)
         return False
-    print(f"Restaurar serviço: {last['scope']} {last['unit']} {desired[0]} "
+    print(f"Restore service: {last['scope']} {last['unit']} {desired[0]} "
           + ('active' if desired[1] else 'inactive'))
     if not apply:
         return True
@@ -659,14 +659,14 @@ def rollback_run(run, apply=False):
                 try:
                     result = rollback_service(fd, index, record, progress.get(index), apply)
                 except (OSError, ValueError, subprocess.SubprocessError):
-                    print('Conflito ou falha de restauração do serviço: ' + record['first']['unit'])
+                    print('Conflict or service restore failure: ' + record['first']['unit'])
                     manual_service(record['first'])
                     result = False
             success = result and success
         for package in packages:
             if not package['before_installed'] and package['applied_installed']:
-                print('Revisão manual de pacote instalado: ' + package['package']
-                      + '; dependências e uso posterior incertos; nenhuma remoção automática.')
+                print('Manual review required for installed package: ' + package['package']
+                      + '; dependencies and future use are uncertain; no automatic removal was performed.')
         return success
 
 
@@ -704,7 +704,7 @@ def main():
                             with journal(run, writable=False):
                                 found.append(run)
                         except (OSError, ValueError, TypeError, KeyError):
-                            print(f'Aviso: execução inválida ou incompleta ignorada: {run}', file=sys.stderr)
+                            print(f'Warning: ignoring invalid or incomplete run: {run}', file=sys.stderr)
             except FileNotFoundError:
                 if os.path.lexists(runs):
                     raise
@@ -730,7 +730,7 @@ def main():
         elif args.command in ('rollback-preview', 'rollback-apply'):
             return 0 if rollback_run(args.run, apply=args.command == 'rollback-apply') else 1
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
-        print('Erro: estado ou caminho inválido; operação interrompida.', file=sys.stderr)
+        print('Error: invalid state or path; operation aborted.', file=sys.stderr)
         return 1
     return 0
 

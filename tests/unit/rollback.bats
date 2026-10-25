@@ -76,7 +76,7 @@ PY
     [[ "$output" == *"$RUN_ID"* ]]
     run "$ROLLBACK" "$RUN_ID" --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *'Restaurar'* ]]
+    [[ "$output" == *'Restore'* ]]
     [ "$(cat "$BATS_TEST_TMPDIR/target")" = installed ]
     [ "$before" = "$(find "$XDG_STATE_HOME" "$BATS_TEST_TMPDIR/target" -type f -exec sha256sum {} +)" ]
     [ "$(wc -l <"$JOURNAL")" -eq 4 ]
@@ -98,13 +98,31 @@ PY
     [ "$(wc -l <"$JOURNAL")" -eq 6 ]
 }
 
+@test "interactive yes confirms rollback" {
+    prepare_file
+    run bash -c 'printf "yes\\n" | "$1" "$2"' _ "$ROLLBACK" "$RUN_ID"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$BATS_TEST_TMPDIR/target")" = original ]
+    [ "$(wc -l <"$JOURNAL")" -eq 6 ]
+}
+
+@test "interactive no leaves rollback target and journal unchanged" {
+    prepare_file
+    before=$(sha256sum "$JOURNAL")
+    run bash -c 'printf "no\\n" | "$1" "$2"' _ "$ROLLBACK" "$RUN_ID"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'Rollback cancelled.'* ]]
+    [ "$(cat "$BATS_TEST_TMPDIR/target")" = installed ]
+    [ "$(sha256sum "$JOURNAL")" = "$before" ]
+}
+
 @test "later edits are conflicts in preview and apply and remain unchanged" {
     prepare_file
     printf 'user-edited\n' >"$BATS_TEST_TMPDIR/target"
     for flag in --dry-run --yes; do
         run "$ROLLBACK" "$RUN_ID" "$flag"
         [ "$status" -ne 0 ]
-        [[ "$output" == *'Conflito'* ]]
+        [[ "${output,,}" == *'conflict'* ]]
         [ "$(cat "$BATS_TEST_TMPDIR/target")" = user-edited ]
         [ "$(wc -l <"$JOURNAL")" -eq 4 ]
     done
@@ -162,7 +180,7 @@ PY
     before="$(sha256sum "$JOURNAL" "$BATS_TEST_TMPDIR/target")"
     run "$ROLLBACK" "$RUN_ID" --yes
     [ "$status" -ne 0 ]
-    [[ "$output" == *'manual'* ]]
+    [[ "${output,,}" == *'manual'* ]]
     [[ "$output" == *"$backup"* ]]
     [[ "$output" == *"$BATS_TEST_TMPDIR/target"* ]]
     [[ "$output" == *'cp --preserve=mode,ownership,timestamps --'* ]]
@@ -229,7 +247,7 @@ PY
     run "$ROLLBACK" "$RUN_ID" --yes
     [ "$status" -eq 0 ]
     [[ "$output" == *'example:amd64'* ]]
-    [[ "$output" == *'manual'* ]]
+    [[ "${output,,}" == *'manual'* ]]
     [[ "$output" != *'preexisting'* ]]
     [ ! -e "$PACKAGE_MUTATION" ]
     manifest verify "$RUN_ID"
@@ -259,7 +277,7 @@ PY
     export FORBID_SERVICE_WRITES=1
     run "$ROLLBACK" "$RUN_ID" --yes
     [ "$status" -ne 0 ]
-    [[ "$output" == *'Conflito'* ]]
+    [[ "${output,,}" == *'conflict'* ]]
     [ "$(cat "$SERVICE_STATE")" = '["enabled", false]' ]
 }
 
@@ -307,7 +325,7 @@ PY
     export FORBID_SERVICE_WRITES=1
     run "$ROLLBACK" "$RUN_ID" --yes
     [ "$status" -ne 0 ]
-    [[ "$output" == *'manual'* ]]
+    [[ "${output,,}" == *'manual'* ]]
     [[ "$output" == *'systemctl --system stop pending.service'* ]]
     [[ "$output" == *'systemctl --system disable pending.service'* ]]
 }
@@ -360,7 +378,7 @@ PY
     export FORBID_SERVICE_WRITES=1
     run "$ROLLBACK" "$RUN_ID" --yes
     [ "$status" -ne 0 ]
-    [[ "$output" == *'manual'* ]]
+    [[ "${output,,}" == *'manual'* ]]
     [[ "$output" == *'systemctl --user disable example.service'* ]]
     [ "$(cat "$SERVICE_STATE")" = '["enabled-runtime", true]' ]
 }

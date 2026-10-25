@@ -165,7 +165,7 @@ UNIT
         apt_apply "$run_id" baseline --confirmed "$APT_PLAN_TOKEN" vaio-task6-fixture
     '
   [ "$status" != 0 ]
-  [[ "$output" == *'estado mudou'* ]]
+    [[ "$output" == *'state changed after preview'* ]]
   [ ! -e "$WORK/unexpected-apt" ]
   [ -z "$(find "$XDG_STATE_HOME" -name packages-baseline-before.json)" ]
 }
