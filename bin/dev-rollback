@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/rollback.sh
+source "$ROOT/lib/rollback.sh"
+
+usage() {
+    printf 'Usage: dev-rollback --list | RUN_ID [--dry-run | --yes]\n'
+}
+
+if [[ $# -eq 1 && $1 == --list ]]; then
+    exec python3 "$ROOT/lib/manifest.py" list
+elif [[ $# -eq 1 && ($1 == --help || $1 == -h) ]]; then
+    usage
+    exit 0
+elif [[ $# -lt 1 || $# -gt 2 || $1 == -* ]]; then
+    usage >&2
+    exit 2
+fi
+
+run_id=$1
+case ${2:-} in
+--dry-run) rollback_preview "$run_id" ;;
+--yes) rollback_apply "$run_id" ;;
+'')
+    rollback_preview "$run_id"
+    printf 'Restore changes from this run? Type yes: ' >&2
+    if ! read -r answer || [[ $answer != yes ]]; then
+        printf 'Rollback cancelled.\n' >&2
+        exit 1
+    fi
+    rollback_apply "$run_id"
+    ;;
+*)
+    usage >&2
+    exit 2
+    ;;
+esac

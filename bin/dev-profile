@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/profiles.sh
+source "$ROOT/lib/profiles.sh"
+
+fail() { printf 'dev-profile: %s\n' "$*" >&2; exit 1; }
+
+[[ $# -ge 1 ]] || fail 'Usage: dev-profile {show|select balanced}'
+action=$1
+shift
+[[ $action == show && $# == 0 || $action == select && $# == 1 && $1 == balanced ]] || fail 'Unknown command or profile.'
+
+table=$(profile_table_path "$ROOT") || fail 'Unsafe or invalid user workload table.'
+profile_load_table "$table" || fail 'Malformed, incomplete, or empty workload table.'
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+[[ $config_home == /* ]] || fail 'XDG_CONFIG_HOME must be an absolute path.'
+choice_path=$config_home/vaio-dev/profile
+profile_choice_read "$choice_path" || fail 'Unsafe or unknown user profile choice.'
+
+show_profile() {
+    printf 'preset=%s\nprovisional=true\nfuture_scopes_only=true\n' "$PROFILE_CHOICE"
+    printf '# workload CPU%% MemoryHighGiB MemoryMaxGiB SwapMaxGiB TasksMax\n'
+    printf '%s\n' "${PROFILE_ROWS[@]}"
+}
+
+if [[ $action == show ]]; then
+    show_profile
+    exit 0
+fi
+
+show_profile
+umask 077
+mkdir -p -- "$config_home/vaio-dev" || fail 'Cannot create profile directory.'
+config_home=$(realpath -e -- "$config_home") || fail 'Cannot resolve configuration directory.'
+choice_dir=$config_home/vaio-dev
+[[ -d $choice_dir && ! -L $choice_dir && -O $choice_dir ]] || fail 'Unsafe profile directory.'
+dir_mode=$(stat -c %a -- "$choice_dir") || fail 'Cannot inspect profile directory.'
+[[ $dir_mode =~ ^[0-7]{3,4}$ ]] || fail 'Invalid profile directory mode.'
+(( (8#$dir_mode & 0022) == 0 )) || fail 'Profile directory must not be group/world writable.'
+choice_path=$choice_dir/profile
+[[ ! -L $choice_path ]] || fail 'Profile choice must not be a symlink.'
+if [[ -e $choice_path ]]; then
+    [[ -f $choice_path && -O $choice_path && $(stat -c %a -- "$choice_path") == 600 ]] || fail 'Unsafe existing profile choice.'
+fi
+temporary=$(mktemp "$choice_dir/.profile.XXXXXXXXXX") || fail 'Cannot create temporary profile choice.'
+if ! printf 'balanced\n' >"$temporary" || ! chmod 600 -- "$temporary" || ! mv -fT -- "$temporary" "$choice_path"; then
+    rm -f -- "$temporary"
+    fail 'Could not atomically save the profile choice.'
+fi
+printf 'selected=balanced\n'

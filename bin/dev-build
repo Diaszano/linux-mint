@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export GOMAXPROCS="${GOMAXPROCS:-8}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+exec "$ROOT/bin/dev-run" build "$@"

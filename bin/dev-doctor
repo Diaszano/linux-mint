@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/preflight.sh
+source "$ROOT/lib/preflight.sh"
+
+json=no
+if (($# == 1)) && [[ $1 == --json ]]; then
+  json=yes
+elif (($# != 0)); then
+  printf 'Usage: dev-doctor [--json]\n' >&2
+  exit 2
+fi
+
+facts=$(preflight_doctor_facts) || {
+  printf 'dev-doctor: unable to collect read-only diagnostics.\n' >&2
+  exit 1
+}
+
+if [[ $json == yes ]]; then
+  printf '%s\n' "$facts" | python3 -c '
+import json
+import sys
+
+data = {}
+for line in sys.stdin:
+    component, field, value = line.rstrip("\n").split("\t", 2)
+    data.setdefault(component, {})[field] = value
+print(json.dumps(data, ensure_ascii=False, sort_keys=True))
+'
+else
+  while IFS=$'\t' read -r component field value; do
+    [[ -n $component ]] || continue
+    if [[ $field == status ]]; then
+      printf '%s: %s\n' "$component" "$value"
+    else
+      printf '  %s=%s\n' "$field" "$value"
+    fi
+  done <<<"$facts"
+fi

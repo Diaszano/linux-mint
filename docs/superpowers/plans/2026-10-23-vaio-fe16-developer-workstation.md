@@ -184,11 +184,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** gradle_plan prints per-project or per-invocation recommendations without writing a project. gradle_global_apply RUN_ID resolves GRADLE_USER_HOME or HOME/.gradle, reports existing same-key conflicts, and writes one delimited managed block only after --gradle-global plus separate preview/consent. Suggested opt-in values are -Xmx3g, MaxMetaspaceSize=768m, workers.max=4, caching=true and daemon.idletimeout=900000; parallel and configuration cache stay project-specific.
 
-- [ ] **Step 1: Write failing tests.** Assert default and --yes alone never write Gradle files; a nondefault GRADLE_USER_HOME is honored; existing unrelated properties and permissions survive; same-key conflicts outside the block refuse to shadow; identical second run is a no-op; later user edit blocks rollback; project files are never edited.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/gradle.bats. Expected: FAIL for missing module.
-- [ ] **Step 3: Implement guidance and optional managed block.** Use backup/atomic-write primitives, preserve existing content exactly outside markers, and omit global parallel/configuration-cache settings. Document Gradle property precedence and that 3 GiB JVM heap is not the total build memory.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/gradle.bats && bash -n lib/gradle.sh. Expected: PASS; default test shows zero Gradle writes and opt-in test shows exactly one managed block.
-- [ ] **Step 5: Commit.** git add lib/gradle.sh lib/rollback.sh setup.sh tests/unit/gradle.bats docs/GRADLE.md; git commit -m "feat: provide opt-in Gradle settings without global defaults"
+- [x] **Step 1: Write failing tests.** Assert default and --yes alone never write Gradle files; a nondefault GRADLE_USER_HOME is honored; existing unrelated properties and permissions survive; same-key conflicts outside the block refuse to shadow; identical second run is a no-op; later user edit blocks rollback; project files are never edited.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/gradle.bats. Expected: FAIL for missing module.
+- [x] **Step 3: Implement guidance and optional managed block.** Use backup/atomic-write primitives, preserve existing content exactly outside markers, and omit global parallel/configuration-cache settings. Document Gradle property precedence and that 3 GiB JVM heap is not the total build memory.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/gradle.bats && bash -n lib/gradle.sh. Expected: PASS; default test shows zero Gradle writes and opt-in test shows exactly one managed block.
+- [x] **Step 5: Commit.** git add lib/gradle.sh lib/rollback.sh setup.sh tests/unit/gradle.bats docs/GRADLE.md; git commit -m "feat: provide opt-in Gradle settings without global defaults"
 
 ### Task 10: Scoped build command and Gradle daemon boundary
 
@@ -196,11 +196,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** dev-build COMMAND [ARGS...] sets workload-local Go/Rust/CMake concurrency defaults only if absent, then calls dev-run build with original argv. The supported Gradle isolation recipe is dev-build ./gradlew assembleDebug --no-daemon. The wrapper never asserts that an already running Gradle daemon or Android Studio build joined its scope.
 
-- [ ] **Step 1: Write failing tests.** Assert spaces and argument boundaries, exit status 0/7 and signals propagate; user-set concurrency variables win; no global environment or project file is changed; the documented Gradle command includes --no-daemon; an existing reusable daemon case is reported as outside the isolation guarantee.
-- [ ] **Step 2: Run unit tests red.** Run: bats tests/unit/dev_build.bats. Expected: FAIL for absent wrapper.
-- [ ] **Step 3: Implement the thin wrapper.** Preserve argv with arrays/exec, set only absent workload-local variables, and keep Gradle advice in documentation instead of silently rewriting project or global properties.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/dev_build.bats && bash -n bin/dev-build. Expected: PASS. In a disposable systemd VM run bats tests/integration/gradle_scope.bats against a small fixture project; expected: --no-daemon creates a single-use daemon if needed, and any daemon, Kotlin/compiler process and worker used by this test remains in the verified build cgroup. A deliberately reused preexisting daemon must be detected and excluded from the guarantee.
-- [ ] **Step 5: Commit.** git add bin/dev-build tests/unit/dev_build.bats tests/integration/gradle_scope.bats docs/GRADLE.md; git commit -m "feat: add scoped build wrapper and Gradle isolation checks"
+- [x] **Step 1: Write failing tests.** Assert spaces and argument boundaries, exit status 0/7 and signals propagate; user-set concurrency variables win; no global environment or project file is changed; the documented Gradle command includes --no-daemon; an existing reusable daemon case is reported as outside the isolation guarantee.
+- [x] **Step 2: Run unit tests red.** Run: bats tests/unit/dev_build.bats. Expected: FAIL for absent wrapper.
+- [x] **Step 3: Implement the thin wrapper.** Preserve argv with arrays/exec, set only absent workload-local variables, and keep Gradle advice in documentation instead of silently rewriting project or global properties.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/dev_build.bats && bash -n bin/dev-build. Expected: PASS. In a disposable systemd VM run bats tests/integration/gradle_scope.bats against a small fixture project; expected: --no-daemon creates a single-use daemon if needed, and any daemon, Kotlin/compiler process and worker used by this test remains in the verified build cgroup. A deliberately reused preexisting daemon must be detected and excluded from the guarantee.
+- [x] **Step 5: Commit.** git add bin/dev-build tests/unit/dev_build.bats tests/integration/gradle_scope.bats docs/GRADLE.md; git commit -m "feat: add scoped build wrapper and Gradle isolation checks"
 
 ### Task 11: KVM diagnostics and fail-fast Android Emulator wrapper
 
@@ -208,11 +208,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** virtualization_check reports SVM, /dev/kvm access, kvm-ok and emulator -accel-check when available. dev-emulator --list lists AVDs without launching. dev-emulator NAME [ARGS...] verifies an x86_64 system image, KVM readiness and allowed args, then invokes dev-run emulator with -avd NAME -accel on -memory 3072 -cores 4 -gpu auto -no-boot-anim. Host limits remain the independent emulator profile: 400% CPU, 5/6 GiB RAM high/max, 1 GiB swap and 512 tasks.
 
-- [ ] **Step 1: Write failing tests.** Assert absent SDK/emulator, absent or inaccessible /dev/kvm, failed -accel-check, missing AVD, ARM-only AVD and acceleration-disabling arguments stop before dev-run; --list remains read-only; a valid x86_64 AVD passes forced -accel on and GPU auto; permitted GPU fallback options do not disable KVM; argv stays intact.
-- [ ] **Step 2: Run unit tests red.** Run: bats tests/unit/virtualization.bats tests/unit/dev_emulator.bats. Expected: FAIL for missing implementations.
-- [ ] **Step 3: Implement checks and wrapper.** Resolve the AVD path from the emulator's list and its .ini/config.ini metadata, validate image.sysdir.1 resolves to an installed x86_64 system image under the selected SDK, and leave AVD files unchanged; do not infer readiness from device permissions alone. Reject contradictory guest/acceleration options, call dev-run only after all checks, and report manual BIOS/login steps where needed.
+- [x] **Step 1: Write failing tests.** Assert absent SDK/emulator, absent or inaccessible /dev/kvm, failed -accel-check, missing AVD, ARM-only AVD and acceleration-disabling arguments stop before dev-run; --list remains read-only; a valid x86_64 AVD passes forced -accel on and GPU auto; permitted GPU fallback options do not disable KVM; argv stays intact.
+- [x] **Step 2: Run unit tests red.** Run: bats tests/unit/virtualization.bats tests/unit/dev_emulator.bats. Expected: FAIL for missing implementations.
+- [x] **Step 3: Implement checks and wrapper.** Resolve the AVD path from the emulator's list and its .ini/config.ini metadata, validate image.sysdir.1 resolves to an installed x86_64 system image under the selected SDK, and leave AVD files unchanged; do not infer readiness from device permissions alone. Reject contradictory guest/acceleration options, call dev-run only after all checks, and report manual BIOS/login steps where needed.
 - [ ] **Step 4: Verify green.** Run the Step 2 command and bash -n lib/virtualization.sh bin/dev-emulator. Expected: PASS. In the authorized VAIO acceptance phase, run bats tests/integration/emulator.bats with a user-created x86_64 AVD; expected: KVM actually active, emulator and children in its scope and all five kernel controls enforced. Do not label a VM without nested KVM as a hardware pass.
-- [ ] **Step 5: Commit.** git add lib/virtualization.sh bin/dev-emulator tests/unit/virtualization.bats tests/unit/dev_emulator.bats tests/integration/emulator.bats; git commit -m "feat: require KVM for scoped Android Emulator launches"
+- [x] **Step 5: Commit.** git add lib/virtualization.sh bin/dev-emulator tests/unit/virtualization.bats tests/unit/dev_emulator.bats tests/integration/emulator.bats; git commit -m "feat: require KVM for scoped Android Emulator launches"
 
 ### Task 12: Optional Docker and bounded Compose example
 
@@ -220,11 +220,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** docker_plan reports distro/CE/rootless state without installing; docker_apply RUN_ID acts only after --docker selection, preview and confirmation. The example starts PostgreSQL and Valkey only on explicit user invocation, binds 127.0.0.1, requires POSTGRES_PASSWORD from the environment and caps CPU, memory and PIDs per service. No docker-group membership change.
 
-- [ ] **Step 1: Write failing tests.** Assert default setup makes no Docker APT/service calls; Docker CE versus distro packages is not mixed; --docker records package/service before state; existing Docker is respected; Compose has localhost binds, bounded cpus/mem_limit/pids_limit and a required password variable but no literal secret; rootless mode with ineffective cgroup controls is warned about.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/docker.bats && yamllint examples/compose-limits.example.yaml. Expected: FAIL because module/example is missing.
-- [ ] **Step 3: Implement opt-in package/service handling and minimal example.** Keep containers outside dev-run's claimed budget. Document sudo docker versus rootless and verify actual limits with docker stats only in the opt-in VM test.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/docker.bats && yamllint examples/compose-limits.example.yaml && bash -n lib/docker.sh. Expected: PASS. In a disposable VM with Docker explicitly selected, run bats tests/integration/docker.bats; expected: localhost-only ports and enforced service limits. If Docker is absent, mark NOT INSTALLED rather than PASS.
-- [ ] **Step 5: Commit.** git add lib/docker.sh examples/compose-limits.example.yaml setup.sh lib/rollback.sh tests/unit/docker.bats tests/integration/docker.bats; git commit -m "feat: make Docker an explicit bounded option"
+- [x] **Step 1: Write failing tests.** Assert default setup makes no Docker APT/service calls; Docker CE versus distro packages is not mixed; --docker records package/service before state; existing Docker is respected; Compose has localhost binds, bounded cpus/mem_limit/pids_limit and a required password variable but no literal secret; rootless mode with ineffective cgroup controls is warned about. Added regressions for cross-provider APT dependencies and an active orphan docker.socket.
+- [x] **Step 2: Run tests red.** Initial missing-module/example tests failed. Later the provider-dependency regression failed because an unexpected docker-ce dependency was accepted when no provider was installed; the orphan-socket regression failed because planning ignored the active socket. Both failures were fixed and retested.
+- [x] **Step 3: Implement opt-in package/service handling and minimal example.** Docker planning runs only for explicit selection; requested-provider inference guards APT dependencies; Docker service/socket state is preserved or fails closed; installation journals service intent/applied state. Compose is explicit, localhost-bound, requires a password variable, and documents that Docker containers are outside dev-run budgets. No docker-group membership change.
+- [x] **Step 4: Verify green.** Focused Docker/setup Bats passed 18/18; yamllint, Bash syntax and ShellCheck passed. Full Bats unit suite passed 164/164. Full integration suite passed 15 tests and skipped 3 Gradle-scoped tests because Gradle was not installed in the clean overlay. Clean disposable QEMU Docker integration passed with enforced service limits and 127.0.0.1 bindings. `dev-rollback --dry-run` recognized Docker service state and left package removal for manual review.
+- [x] **Step 5: Commit.** Commit `1ff6281 feat: make Docker an explicit bounded option`.
 
 ### Task 13: Read-only doctor and stable health report
 
@@ -232,34 +232,34 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** dev-doctor prints Portuguese PASS/WARN/FAIL/NOT INSTALLED and optional --json with stable keys for host, swap, zram, KVM, Mesa, thermal/power, cgroup controllers, Gradle, mise, SDK, Docker and run manifest. It never runs a mutating command.
 
-- [ ] **Step 1: Write failing tests.** Assert doctor does not call sudo/APT or write files, distinguishes not tested from PASS, produces parseable stable JSON and reports VM sysctls without changing them. An unavailable KVM check remains NOT INSTALLED or FAIL with a manual next step.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/dev_doctor.bats. Expected: FAIL for the absent command.
-- [ ] **Step 3: Implement read-only reporting.** Reuse preflight facts, query installed tool paths and manifest entries as data, omit secrets and never call a probe that modifies state.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/dev_doctor.bats && bash -n bin/dev-doctor && bin/dev-doctor --json | python3 -m json.tool. Expected: tests PASS, syntax exit 0 and parseable JSON; on a non-Mint development machine, doctor reports unsupported/NOT INSTALLED without modifying it.
+- [x] **Step 1: Write failing tests.** Assert doctor does not call sudo/APT or write files, distinguishes not tested from PASS, produces parseable stable JSON and reports VM sysctls without changing them. An unavailable KVM check remains NOT INSTALLED or FAIL with a manual next step.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/dev_doctor.bats. Expected: FAIL for the absent command. A follow-up zram manager test also failed because an installed manager with no active device was reported as NOT INSTALLED.
+- [x] **Step 3: Implement read-only reporting.** Reuse preflight facts, query installed tool paths and manifest entries as data, omit secrets and never call a probe that modifies state.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/dev_doctor.bats && bash -n bin/dev-doctor && bin/dev-doctor --json | python3 -m json.tool. Expected: tests PASS, syntax exit 0 and parseable JSON; on a non-Mint development machine, doctor reports unsupported/NOT INSTALLED without modifying it. Full unit and disposable VM integration evidence is in the Task 13 report.
 - [ ] **Step 5: Commit.** git add bin/dev-doctor lib/preflight.sh tests/unit/dev_doctor.bats; git commit -m "feat: add read-only workstation diagnostics"
 
 ### Task 14: Validated user profile selection
 
-**Files:** Create bin/dev-profile and tests/unit/dev_profile.bats; extend config/profiles.conf and bin/dev-run.
+**Files:** Create bin/dev-profile, lib/profiles.sh and tests/unit/dev_profile.bats; extend config/profiles.conf, bin/dev-run and tests/unit/dev_run.bats.
 
 **Interfaces:** dev-profile show/select reads the shipped balanced tab-separated table and writes a mode-0600 user-owned profile choice for future scopes. A measured local throughput profile may be selected after validation, but no faster values are pre-populated before VAIO measurements. The current workload scope is never changed.
 
-- [ ] **Step 1: Write failing tests.** Assert balanced remains selected by default; malformed, negative, unbounded, too-large or shell-code-like rows are rejected as data; valid selection affects the next dev-run only; a failed write preserves the prior choice; running scopes are unaffected.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/dev_profile.bats. Expected: FAIL for absent profile CLI.
-- [ ] **Step 3: Implement strict parse and atomic user choice.** Use the same validated row reader as dev-run, never source profile content, require explicit selection and show effective provisional limits before launch.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/dev_profile.bats tests/unit/dev_run.bats && bash -n bin/dev-profile bin/dev-run. Expected: PASS and no elevated command.
-- [ ] **Step 5: Commit.** git add bin/dev-profile bin/dev-run config/profiles.conf tests/unit/dev_profile.bats; git commit -m "feat: validate selectable workload profiles"
+- [x] **Step 1: Write failing tests.** Assert balanced remains selected by default; malformed, negative, unbounded, too-large or shell-code-like rows are rejected as data; valid selection affects the next dev-run only; a failed write preserves the prior choice; running scopes are unaffected.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/dev_profile.bats. Expected: FAIL for absent profile CLI.
+- [x] **Step 3: Implement strict parse and atomic user choice.** Use the same validated row reader as dev-run, never source profile content, require explicit selection and show effective provisional limits before launch.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/dev_profile.bats tests/unit/dev_run.bats && bash -n bin/dev-profile bin/dev-run. Expected: PASS and no elevated command.
+- [x] **Step 5: Commit.** Implemented in `e59dae2` and `1462ddc`; follow-up regression committed separately. Files include `bin/dev-profile`, `lib/profiles.sh`, `bin/dev-run`, `config/profiles.conf`, `tests/unit/dev_profile.bats`, and `tests/unit/dev_run.bats`.
 
 ### Task 15: Idempotent user wrapper installation
 
-**Files:** Create lib/install-wrappers.sh and tests/unit/install_wrappers.bats; extend lib/backup.sh and lib/rollback.sh.
+**Files:** Create `lib/install-wrappers.sh` and `tests/unit/install_wrappers.bats`; reuse `lib/backup.sh` and `lib/rollback.sh` ownership primitives.
 
-**Interfaces:** install_wrappers RUN_ID copies only the owned bin commands to HOME/.local/bin, skipping identical files, snapshotting an existing target and recording its checksum. Rollback removes or restores only an unchanged owned wrapper.
+**Interfaces:** `install_wrappers RUN_ID` installs launchers for owned `bin/` commands into `$HOME/.local/bin`, skips identical files, snapshots prior targets, and journals checksums. Rollback removes/restores only unchanged owned launchers. Generated launchers embed the checkout absolute root safely and forward `"$@"`; copying scripts literally would derive ROOT from `~/.local/bin` and break library/config lookup. Internal `dev-gate` is excluded.
 
-- [ ] **Step 1: Write failing tests.** Assert install creates executable commands and a user-bin PATH hook once; second install is a no-op; an existing foreign executable or later user-modified wrapper is not silently overwritten; interrupted copy retains old or complete new content and rollback metadata.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/install_wrappers.bats. Expected: FAIL for absent installer.
+- [x] **Step 1: Write failing tests.** Covered executable launchers, PATH hook once, argv boundaries, second-install no-op, foreign target restoration, edited-owned-target refusal, and interrupted atomic replacement with recoverable journal.
+- [x] **Step 2: Run tests red.** Ran `bats tests/unit/install_wrappers.bats` in the disposable VM before implementation; all five initial tests failed because the installer was absent.
 - [ ] **Step 3: Implement journaled user-bin installation.** Reuse owned-file primitives, compare checksums before replacing, and preserve an existing PATH entry and shell content outside a delimited owned block.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/install_wrappers.bats && bash -n lib/install-wrappers.sh. Expected: PASS; duplicate-run test shows one PATH block and no content change.
+- [x] **Step 4: Verify green.** Ran `bash -n lib/install-wrappers.sh` and `bats --print-output-on-failure tests/unit/install_wrappers.bats` in the disposable VM; all six focused tests passed, including argv boundaries and interrupted replacement recovery.
 - [ ] **Step 5: Commit.** git add lib/install-wrappers.sh lib/backup.sh lib/rollback.sh tests/unit/install_wrappers.bats; git commit -m "feat: install workstation commands idempotently"
 
 ### Task 16: Connect setup modules without weakening the safety order
@@ -268,67 +268,93 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** setup flow is preflight -> all conflict checks -> selected-module preview -> explicit confirmation -> begin_run -> module apply -> per-module verification -> final manifest/doctor report. --yes confirms only already selected, previewed operations; --gradle-global still needs its separate selection and collision decision. A failed module stops later modules, records the failure, attempts only safe owned recovery and prints the run ID/manual recovery path.
 
-- [ ] **Step 1: Write failing tests.** Assert no APT/service action precedes conflict checks or run journal; --check/--dry-run remain read-only; repeated setup produces no duplicate hooks or service restarts; sudo denial, network failure, interrupted package transaction and low disk space stop with a run ID and intact prior files; unknown flags exit 2; unexpected hardware adapts limits or refuses before launch.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/setup_flow.bats. Expected: FAIL because module orchestration is not connected.
-- [ ] **Step 3: Wire modules in approved dependency order.** Keep sourcing mutation-free, use traps for interrupted runs, compare-before-write, and do not substitute a normal unbounded command when a limited command fails.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/setup_flow.bats tests/unit/setup_cli.bats && bash -n setup.sh. Expected: PASS. In a disposable VM snapshot only, run bats tests/integration/setup_vm.bats; expected: two runs show one managed block and no unintended second-run change, while rollback restores owned configuration and refuses edited-file clobbering.
-- [ ] **Step 5: Commit.** git add setup.sh lib/common.sh lib/backup.sh lib/rollback.sh tests/unit/setup_flow.bats tests/integration/setup_vm.bats; git commit -m "feat: orchestrate idempotent workstation setup"
+- [x] **Step 1: Write failing tests.** Assert no APT/service action precedes conflict checks or run journal; --check/--dry-run remain read-only; repeated setup produces no duplicate hooks or service restarts; sudo denial, network failure, interrupted package transaction and low disk space stop with a run ID and intact prior files; unknown flags exit 2; unexpected hardware adapts limits or refuses before launch.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/setup_flow.bats. Expected: FAIL because module orchestration is not connected. VM RED showed missing `--yes` orchestration and missing post-journal disk guard; failure-event schema test rejected its new event before implementation.
+- [x] **Step 3: Wire modules in approved dependency order.** Keep sourcing mutation-free, use traps for interrupted runs, compare-before-write, and do not substitute a normal unbounded command when a limited command fails.
+- [x] **Step 4: Verify green.** Final disposable-VM follow-up: focused setup flow/CLI 26/26 Bats PASS; full unit 206/206 Bats PASS; 20 Python tests PASS; gated integration 19 total, 15 passed and 4 skipped (Docker absent; three Gradle tests require Gradle). Bash syntax, warning-level ShellCheck, `shfmt -d -i 2 setup.sh`, yamllint, legacy hashes, and `git diff --check` PASS. Full-tree shfmt reports existing formatting differences in unmodified scripts; see the Task 16 follow-up report.
+- [x] **Step 5: Commit.** git add setup.sh lib/common.sh lib/backup.sh lib/rollback.sh tests/unit/setup_flow.bats tests/integration/setup_vm.bats; git commit -m "feat: orchestrate idempotent workstation setup"
 
 ### Task 17: Documentation, static quality and disposable-VM verification
 
 **Files:** Modify README.md; create docs/USAGE.md, docs/PERFORMANCE.md, docs/TROUBLESHOOTING.md, tests/unit/docs_contract.bats, tests/integration/run-vm.sh and tests/README.md.
 
-**Interfaces:** Root README becomes v2 documentation only after code and host-independent tests pass. USAGE explains each opt-in, KVM setup, signed mise, project-level Gradle, --no-daemon, wrapper boundaries and rollback. PERFORMANCE defines baseline and repeated comparison. run-vm.sh refuses execution unless systemd-detect-virt --vm succeeds and VAIO_TEST_VM=1 was deliberately set.
+**Interfaces:** Root README v2 operator handoff. USAGE explains opt-in behavior, KVM setup, signed mise, project-level Gradle, `--no-daemon`, wrapper boundaries and rollback. PERFORMANCE defines a measurement protocol without pre-claiming improvement. `run-vm.sh` refuses execution unless `systemd-detect-virt --vm` succeeds and `VAIO_TEST_VM=1` is deliberately set.
 
-- [ ] **Step 1: Write failing documentation/static checks.** Add tests that README flags match setup --help, every persistent module names rollback behavior, technical docs are English, legacy README remains unchanged, Docker/zram/earlyoom/global Gradle/sysctls are documented default-off, and no prose promises IDE/daemon containment or speed gains without measurement.
-- [ ] **Step 2: Run checks red.** Run: bats tests/unit/docs_contract.bats, bash -n setup.sh lib/*.sh bin/* tests/integration/run-vm.sh, shellcheck setup.sh lib/*.sh bin/*, shfmt -d setup.sh lib/*.sh bin/*, and yamllint examples/compose-limits.example.yaml. Expected: documentation test FAIL until docs are written; syntax/static tools may reveal issues to fix in owned files.
-- [ ] **Step 3: Write exact operator docs and VM runner.** Include --check/--dry-run, permission prompts, package/service conflict behavior, signed artifact key, manual Studio/AVD setup, rootless Docker caveat, version diagnostics, manifest IDs, checksum-conflict rollback and limits of package reversal. run-vm.sh uses a disposable snapshot, never silently runs on the physical VAIO.
-- [ ] **Step 4: Verify green and run the full VM suite.** Run the Step 2 commands plus bats tests/unit/*.bats, python3 tests/unit/test_manifest.py and, inside the disposable VM, VAIO_TEST_VM=1 bash tests/integration/run-vm.sh. Expected: all unit/static/integration checks PASS; scope and swap tests inspect live kernel files; unsupported or absent KVM is reported separately, not counted as hardware success.
-- [ ] **Step 5: Commit.** git add README.md docs/USAGE.md docs/PERFORMANCE.md docs/TROUBLESHOOTING.md tests/README.md tests/unit/docs_contract.bats tests/integration/run-vm.sh; git commit -m "docs: document safe workstation setup and VM validation"
+- [x] **Step 1: Write failing documentation/static checks.** Contract tests cover setup help parity, rollback, default-off settings, English documentation and legacy hash preservation, performance and IDE/daemon claims, hardware/security boundaries, and VM runner refusal. They failed before the docs and runner existed. The setup-test handoff check passed only after the runner exported `VAIO_SETUP_TEST_VM=1` following both VM gates.
+- [x] **Step 2: Establish reproducible static gates.** In the disposable VM, `shellcheck -x -S warning setup.sh lib/*.sh bin/* tests/integration/run-vm.sh` exited 0 with no diagnostics. Default full-tree ShellCheck exited 1 with 49 informational (`info`) diagnostics, including five in `setup.sh`; this advisory baseline is not reported as a clean default run. The documented two-space and four-space shfmt groups passed; files with mixed existing indentation were not mass-reformatted.
+- [x] **Step 3: Write exact operator docs and VM runner.** Added usage, performance, troubleshooting, and test-safety guidance. The runner requires deliberate opt-in and VM detection before integration tests; the gates enable only the isolated wrapper-install/rollback test, not Docker or Gradle installation.
+- [x] **Step 4: Verify docs, static checks, and suites in a disposable VM.** Documentation contract passed 8/8; full unit Bats passed 214/214; Python manifest tests passed 20/20; Bash syntax, warning-severity full-tree ShellCheck, listed shfmt groups, YAML lint, and legacy hashes passed. Foreground `VAIO_TEST_VM=1 bash tests/integration/run-vm.sh` exited 0: 19 tests, 15 passed, 4 skipped (Docker unavailable; three Gradle tests unavailable), 0 failed. An earlier background-launched run failed the SIGINT case because its test launcher inherited SIGINT as ignored; foreground reruns passed, so no product change was made. No physical hardware or performance acceptance was performed.
+- [x] **Step 5: Commit.** Original documentation/runner work is committed as `3ef8e5a` (`docs: document safe workstation setup and VM validation`); the reviewed static-gate follow-up is committed separately.
 
 ### Task 18: Physical VAIO acceptance handoff and measurement gate
 
 **Files:** Extend docs/PERFORMANCE.md and docs/TROUBLESHOOTING.md; create tests/acceptance/vaio-checklist.md. No installer code.
 
-**Interfaces:** This is a runbook for a separate, explicitly authorized physical installation. It first captures an untuned baseline, then records selected installation modules and runs the exact AC-01 through AC-12 checks. A 30-minute representative workload includes Android Studio, one x86_64 AVD via dev-emulator, dev-build ./gradlew assembleDebug --no-daemon and bounded Docker only if opted in.
+**Interfaces:** The runbook is for a separately authorized physical installation. It first captures an untuned baseline, records selected installation modules, and then records evidence for AC-01 through AC-12. Its 30-minute representative workload includes Android Studio, one x86_64 AVD launched through `dev-emulator`, a Gradle build launched with `dev-build ./gradlew assembleDebug --no-daemon`, and bounded Docker only when explicitly opted in.
 
-- [ ] **Step 1: Write the acceptance checklist before claiming success.** Specify baseline and three comparable runs with build/boot medians, peak RAM/swap, per-scope cpu.max/memory.high/memory.max/memory.swap.max/pids.max, memory.events and memory.swap.events, host MemAvailable, swap/zram, PSI, thermals and repeatable interactive-latency samples. Include GUI survival, no host-wide OOM, KVM actually on, scope membership of emulator/Gradle daemon/compilers/workers, and rollback from a changed file plus conflict case.
-- [ ] **Step 2: Review the checklist against AC-01 through AC-12.** Expected: every criterion has an evidence line and a PASS/WARN/FAIL/NOT INSTALLED outcome; unavailable measurements are not called passing.
-- [ ] **Step 3: Document calibration decisions.** Keep 9/2 GiB build, 6/1 GiB emulator and 8/2 GiB heavy RAM/swap caps as provisional until data justify one-at-a-time changes. Explain that IDE, Docker and preexisting daemons use separate budgets and that no sustained-performance improvement is claimed without comparable repeated measurements.
-- [ ] **Step 4: Verify documents only.** Run: sha256sum -c tests/fixtures/legacy.sha256 and bats tests/unit/docs_contract.bats. Expected: PASS. Do not execute setup, an emulator, a memory-pressure test or a host tune as part of this planning task.
-- [ ] **Step 5: Commit after implementation approval.** git add docs/PERFORMANCE.md docs/TROUBLESHOOTING.md tests/acceptance/vaio-checklist.md; git commit -m "docs: define physical VAIO acceptance evidence"
+- [x] **Step 1: Write the acceptance checklist before claiming success.** Added a blank physical evidence form with baseline and three comparable runs, scope controls/events, GUI latency, cgroup membership, rollback restore/conflict checks, and AC-01 through AC-12 evidence/outcome fields.
+- [x] **Step 2: Review the checklist against AC-01 through AC-12.** The checklist records `PASS`, `WARN`, `FAIL`, or `NOT INSTALLED`; it explicitly states that missing prerequisites are not passes and no physical VAIO acceptance has been performed.
+- [x] **Step 3: Document calibration decisions.** The 9/2 GiB build, 6/1 GiB emulator, and 8/2 GiB heavy RAM/swap ceilings remain provisional. The checklist and performance guidance require three comparable runs, one-limit-at-a-time calibration, and evidence before making performance claims. Troubleshooting records earlyoom as unavailable and fail-closed pending verified build-first priority.
+- [x] **Step 4: Verify documents only.** The docs contract passed 9/9 in the disposable VM and `sha256sum -c tests/fixtures/legacy.sha256` passed. Repository `git diff --check` passed. No setup, emulator, memory-pressure, or host-tuning command was run for this task. Physical acceptance remains unperformed.
+- [x] **Step 5: Commit.** Commit the reviewed documentation handoff with `docs: define physical VAIO acceptance evidence` after final verification.
 
 ## Execution gates
 
-1. The owner reviews and explicitly approves this plan before any implementation code is written.
-2. During implementation, complete Tasks 1–5 and their tests before implementing persistent host-mutation paths. Complete journal and rollback tests before VM APT or memory-manager tests.
-3. Run privileged installation, interruption, swap-pressure and cgroup integration only inside a disposable VM snapshot. A container pass is not a systemd/KVM pass.
-4. Do not run the installer or acceptance workload on the physical VAIO until separate deliberate authorization. Record baseline before any authorized tuning.
-5. A failing static/unit/VM gate stops delivery. Manual hardware checks remain NOT TESTED until performed; performance claims require the recorded comparison.
+1. The owner explicitly approved this plan before implementation began.
+2. During implementation, complete Tasks 1–5 and their tests before persistent host-mutation paths. Complete journal and rollback tests before VM APT or memory-manager tests.
+3. Run privileged installation, interruption, swap-pressure, and cgroup integration only inside a disposable VM snapshot. A container pass is not a systemd/KVM pass.
+4. Do not run the installer or acceptance workload on the physical VAIO until separate deliberate authorization. Record a baseline before any authorized tuning.
+5. A failing static, unit, or VM gate stops delivery. Manual hardware checks remain NOT TESTED until performed; performance claims require recorded comparisons.
 
 ## Final verification commands for the implementer
 
-    bash -n setup.sh lib/*.sh bin/*
-    shellcheck setup.sh lib/*.sh bin/*
-    shfmt -d setup.sh lib/*.sh bin/*
+    bash -n setup.sh lib/*.sh bin/* tests/integration/run-vm.sh
+    shellcheck -x -S warning setup.sh lib/*.sh bin/* tests/integration/run-vm.sh
+    shfmt -i 2 -d setup.sh lib/backup.sh lib/common.sh lib/gradle.sh lib/memory.sh lib/mise.sh bin/dev-build bin/dev-doctor
+    shfmt -i 4 -d lib/profiles.sh lib/rollback.sh lib/virtualization.sh bin/dev-emulator bin/dev-gate bin/dev-rollback bin/dev-run tests/integration/run-vm.sh
     bats tests/unit/*.bats
     python3 tests/unit/test_manifest.py
     yamllint examples/compose-limits.example.yaml
     sha256sum -c tests/fixtures/legacy.sha256
 
-Expected: all commands exit 0. In a disposable VM snapshot only:
+Expected: all commands exit 0. Default ShellCheck without `-S warning` is documented as an informational baseline with 49 `info` diagnostics, not a passing command. Files with mixed existing indentation are excluded from the established shfmt groups. In a disposable VM snapshot only:
 
     VAIO_TEST_VM=1 bash tests/integration/run-vm.sh
 
-Expected: live package, rollback, systemd controller, swap and Gradle-scope tests PASS; KVM hardware acceptance remains separate unless nested KVM is actually available.
+Expected: integration exits 0, with unavailable optional prerequisites reported as skipped. Hardware-dependent acceptance remains separate and requires explicit authorization.
 
-## Self-review against approved Revision 3
+\n## Self-review against approved Revision 3
 
 - **Coverage:** FR-00 through FR-10 and AC-01 through AC-12 map to owning tasks above. Legacy behavior, safe preview, rollback, memory/swap, KVM, Gradle, mise, Docker, diagnostics, documentation and measured concurrency each have explicit checks.
 - **Safety order:** Tasks 1–5 establish characterization, read-only behavior, the journal, rollback and a live VM-verified fail-closed scope before any persistent mutation module. VM setup and pressure tests stay separate from physical VAIO acceptance.
 - **Interface consistency:** setup calls the named preflight, journal, rollback, package and module functions; dev-build and dev-emulator call dev-run; dev-profile writes only validated future-launch data. Journal and profile files are parsed as data, never sourced.
 - **Review focus:** Each of the five listed failure classes has a test in its owning task. Each code task has a red-green cycle; Task 1 records the baseline and Task 18 is a documentation-only acceptance checklist. Every task has five checkable steps and an English Conventional Commit.
 - **Proportion:** Optional unattended Android Studio/SDK installation and dev-benchmark are omitted. The design's performance claim remains an evidence gate, and initial ceilings stay provisional.
+
+## Implementation accounting
+
+| Task | Status | Candidate evidence or limitation |
+| --- | --- | --- |
+| 1. Legacy characterization | Complete | Legacy behavior tests and checksums; legacy files unchanged. |
+| 2. Read-only preflight and CLI | Complete | Preview, flag validation, and conflict inventory tests. |
+| 3. Journal and owned writes | Complete | Manifest, backup, idempotency, and atomic-write tests. |
+| 4. Rollback | Complete | Clean restore and changed-file conflict tests. |
+| 5. Cgroup workload gates | Complete | Effective limits and process membership verified in disposable VM. |
+| 6. Package conflict barrier | Complete | Conflict checks run before package/service mutation. |
+| 7. Memory and OOM policy | Partial by safety policy | zram/swappiness paths are implemented. `--earlyoom` is unsupported and exits before preflight, journaling, packages, or services because build-first kill priority is unverified. No Java process-name matching is used. |
+| 8. Signed mise | Complete | Pinned signature and artifact digest verified in disposable VM. |
+| 9. Gradle guidance | Complete | Project-level guidance; global properties remain opt-in. |
+| 10. Scoped builds | Complete | `--no-daemon` build and descendant containment verified in disposable VM. |
+| 11. Emulator wrapper | Complete with hardware acceptance pending | KVM/AVD refusal paths and wrapper contract tested; physical accelerated AVD acceptance not run. |
+| 12. Optional Docker | Complete | Opt-in and bounded configuration tested in a disposable VM; final fresh VM lacked Docker. |
+| 13. Read-only doctor | Complete | Unit and disposable-VM behavior verified. |
+| 14. Profile selection | Complete | Profile validation and fail-closed behavior tested. |
+| 15. User wrappers | Complete | Idempotent installation and rollback tested in disposable VM. |
+| 16. Setup orchestration | Complete | Dependency order, interruption handling, disk checks, idempotency, and rollback tested. |
+| 17. Documentation and VM verification | Complete | Warning-level ShellCheck and documented style-specific shfmt gates passed; default ShellCheck retains 49 informational diagnostics. |
+| 18. Physical acceptance handoff | Complete as documentation only | Checklist covers AC-01 through AC-12. Physical installation, performance, thermals, and responsiveness remain untested and separately authorized. |
+
+**Deviation and release limits:** EarlyOOM installation/configuration is intentionally not delivered; the explicit option returns an actionable unsupported-feature error before any preflight or journal creation. The final full VM run skips optional Docker and Gradle integration cases when those tools are absent, though earlier targeted disposable-VM runs covered them. No physical VAIO installation or acceptance workload was run.
 
 ## Handoff
 

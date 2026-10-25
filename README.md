@@ -1,45 +1,34 @@
-# VAIO FE16 Developer Workstation — Superpowers design review
+# VAIO FE16 Developer Workstation
 
-**State: revised design draft awaiting final approval; no v2 implementation exists.**
+This repository contains a Linux Mint 22.x workstation setup and scoped workload tools for the VAIO FE16, targeting the Ryzen 7 5825U and 24 GiB RAM. The implementation is conservative: it verifies workload controls before launch, preserves existing memory configuration by default, and records owned changes for review and rollback.
 
-This repository handoff is for reviewing and planning the next generation of a
-Linux Mint development workstation setup for a Ryzen 7 5825U with 24 GiB RAM.
-Do **not** execute `legacy/vaio-fe16-dev-setup/setup.sh` expecting the new v2
-behavior. It is retained unmodified for inspection and characterization tests.
+## Start here
 
-## Read these files first
+- [Usage and installation](docs/USAGE.md)
+- [Gradle guidance](docs/GRADLE.md)
+- [Performance measurement protocol](docs/PERFORMANCE.md)
+- [Troubleshooting and recovery](docs/TROUBLESHOOTING.md)
+- [Test evidence and VM safety](tests/README.md)
+- [Approved Revision 3 design](docs/superpowers/specs/2026-10-23-vaio-fe16-developer-workstation-design.md)
 
-- `docs/superpowers/specs/2026-10-23-vaio-fe16-developer-workstation-design.md`:
-  authoritative **proposed** v2 behavior and acceptance criteria.
-- `REVIEW-DECISIONS.md`: resolution of all five review comments and evidence.
-- `legacy/vaio-fe16-dev-setup/`: recovered implementation snapshot from an
-  earlier chat; its `README.md` describes the historical v1 behavior.
+The original scripts remain unchanged under `legacy/vaio-fe16-dev-setup/` and are prior art, not the v2 entry point. Read their [historical README](legacy/vaio-fe16-dev-setup/README.md) for the old behavior.
 
-## Important distinction: v1 versus proposed v2
+## Setup preview
 
-| Area | Recovered v1 scripts | Proposed v2 default |
-| --- | --- | --- |
-| Docker | Installed unless `--no-docker` | Not installed unless `--docker` |
-| earlyoom | Installed unless `--no-earlyoom` | Not installed unless `--earlyoom`, conflicts checked |
-| zram | `zram-tools` installed and configured during setup | Existing swap/zram preserved; new zram requires explicit `--zram` approval after conflict checks |
-| Gradle properties | Always edits user `~/.gradle/gradle.properties` | No global edit; optional `--gradle-global` after separate consent |
-| Memory sysctls | Writes swappiness 100 and page-cluster 0 | Leaves both untouched by default |
-| systemd resource limits | Requests limits from systemd | Blocks payload until CPU, memory, swap and task limits are verified in the kernel cgroup |
-| Android Emulator | Checks `/dev/kvm` access, then launches with automatic acceleration | Requires a compatible x86_64 AVD and `-accel on`; GPU defaults to `auto` |
-| mise | Downloads and executes an unverified installer | Uses a pinned upstream release artifact with signed checksum verification |
-| Rollback | Backups and manual instructions | Run manifest, checksummed backups and safe rollback |
+Run `./setup.sh --check` for read-only checks or `./setup.sh --dry-run` to inspect the proposed transaction. Review package, service, file, and conflict details before confirming installation. The default modules are `baseline`, `kvm`, `mise`, and `wrappers`. Docker, zram, earlyoom, global Gradle settings, and swappiness changes are disabled by default. `earlyoom` remains unavailable and fails closed because constrained-build kill priority is unverified.
 
-## Intended v2 contract, AFTER implementation and approval
+Supported options are `--check`, `--dry-run`, `--only`, `--skip`, `--zram`, `--docker`, `--earlyoom`, `--gradle-global`, `--swappiness`, `--skip-mise`, `--no-docker`, `--no-earlyoom`, and `--yes`. `setup.sh --help` is authoritative. See [usage](docs/USAGE.md) for the exact selection and confirmation rules.
 
-`setup.sh --check` and `setup.sh --dry-run` will be read-only. Default installation
-requires an explicit confirmation and will not change zram, Docker, earlyoom,
-global Gradle configuration or VM sysctls. Owned file and service changes will
-have audit entries and safe rollback; unrelated package upgrades cannot be
-restored automatically. Wrappers will verify per-workload CPU, RAM, swap and
-task limits before execution. The supported isolated Gradle recipe uses
-`--no-daemon`; builds launched by an existing Android Studio or Gradle daemon
-are outside the generic wrapper guarantee.
+## Workload tools
 
-Do not add instructions promising v2 install functionality until implementation
-and host-independent tests pass. Before applying host tuning, test rollback,
-idempotence and fail-closed behavior in a disposable VM.
+The user wrappers are `dev-run`, `dev-build`, `dev-emulator`, `dev-doctor`, `dev-profile`, and `dev-rollback`. `dev-run` starts a command only after verifying its systemd scope, cgroup membership, CPU, memory, swap, and task ceilings. `dev-build` is the supported entry for isolated builds; Android Studio builds and daemons already running elsewhere are outside its scope guarantee. The recommended Gradle invocation is:
+
+```sh
+dev-build ./gradlew assembleDebug --no-daemon
+```
+
+The emulator wrapper requires a compatible x86_64 AVD and KVM, passes `-accel on`, and uses GPU mode `auto` by default. These controls and known boundaries are documented in [usage](docs/USAGE.md).
+
+## Safety and performance status
+
+All per-workload resource ceilings are provisional until calibrated from representative measurements. No performance improvement is claimed. The proposed measurement workload, baseline procedure, and metrics are in [PERFORMANCE.md](docs/PERFORMANCE.md). Physical VAIO installation and acceptance checks require separate authorization; this repository does not treat VM results as physical-hardware evidence.

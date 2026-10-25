@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/profiles.sh
+source "$ROOT/lib/profiles.sh"
+fail() {
+    printf 'dev-run: %s\n' "$*" >&2
+    exit 1
+}
+[[ $# -ge 2 ]] || fail 'Usage: dev-run {build|emulator|heavy} COMMAND [ARGS...]'
+profile=$1
+shift
+case $profile in build | emulator | heavy) ;; *) fail 'Unknown workload profile' ;; esac
+if [[ ${DEV_LIMITS_DISABLED:-0} == 1 ]]; then
+    printf 'UNSAFE: DEV_LIMITS_DISABLED=1; running WITHOUT CPU, memory, swap or task limits.\n' >&2
+    exec "$@"
+fi
+
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+profile_choice_read "$config_home/vaio-dev/profile" || fail 'Invalid user profile choice'
+[[ $PROFILE_CHOICE == balanced ]] || fail 'Unsupported resource preset'
+profiles=$(profile_table_path "$ROOT") || fail 'Invalid user profile file'
+profile_load_table "$profiles" || fail 'Malformed workload profile table'
+found=0
+selected=()
+for row in "${PROFILE_ROWS[@]}"; do
+    IFS=$'\t' read -r name cpu high max swap tasks <<<"$row"
+    if [[ $name == "$profile" ]]; then
+        selected=("$cpu" "$high" "$max" "$swap" "$tasks")
+        found=1
+    fi
+done
+((found)) || fail 'Workload missing from profile table'
+read -r cpu high max swap tasks <<<"${selected[*]}"
+mem_kb=$(awk '$1 == "MemTotal:" {print $2}' < <(cat /proc/meminfo))
+profile_number "$mem_kb" && ((mem_kb > 0)) || fail 'Cannot discover RAM'
+threads=$(nproc)
+profile_number "$threads" && ((threads > 0)) || fail 'Cannot discover available CPU threads'
+cpu_cap=$(((threads > 2 ? threads - 2 : 1) * 100))
+((cpu <= cpu_cap)) || cpu=$cpu_cap
+((mem_kb <= 23068672)) || mem_kb=23068672
+high=$((high * 1024 * mem_kb / 23068672 * 1048576))
+max=$((max * 1024 * mem_kb / 23068672 * 1048576))
+swap=$((swap * 1024 * mem_kb / 23068672 * 1048576))
+((cpu > 0 && high > 0 && high < max && tasks > 0)) || fail 'Adapted limits cannot sustain a workload'
+[[ $profile != emulator ]] || ((max > 3221225472)) || fail 'Adapted emulator cap cannot sustain the 3-GiB guest'
+[[ -n ${XDG_RUNTIME_DIR:-} ]] || fail 'XDG_RUNTIME_DIR must be an owned writable directory'
+runtime_root=$(realpath -e -- "$XDG_RUNTIME_DIR") || fail 'Cannot resolve XDG_RUNTIME_DIR'
+[[ -d $runtime_root && -O $runtime_root && -w $runtime_root ]] || fail 'XDG_RUNTIME_DIR must be an owned writable directory'
+runtime_uid=$(id -u)
+runtime_path=$runtime_root
+# Protect every pathname component against renaming by another UID.
+while :; do
+    runtime_stat=$(stat -Lc '%u %a' -- "$runtime_path") || fail 'Cannot inspect runtime path'
+    read -r runtime_owner runtime_mode <<<"$runtime_stat"
+    [[ $runtime_owner == "$runtime_uid" || $runtime_owner == 0 ]] || fail "Unsafe runtime path owner: $runtime_path"
+    [[ $runtime_mode =~ ^[0-7]{1,4}$ ]] || fail 'Invalid runtime path mode'
+    runtime_mode=$((8#$runtime_mode))
+    (((runtime_mode & 0022) == 0 || (runtime_mode & 01000) != 0)) || fail "Unsafe runtime path permissions: $runtime_path"
+    [[ $runtime_path == / ]] && break
+    runtime_path=${runtime_path%/*}
+    [[ -n $runtime_path ]] || runtime_path=/
+done
+XDG_RUNTIME_DIR=$runtime_root
+for tool in systemd-run systemctl timeout setsid nice ionice; do
+    command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
+done
+umask 077
+ipc=$(mktemp -d "$XDG_RUNTIME_DIR/dev-run.XXXXXXXXXX") || fail 'Cannot create private IPC'
+unit="dev-$profile-${ipc##*.}-$$.scope"
+runner=
+gate_pid=
+cgroup=
+cleanup() {
+    trap - EXIT
+    if [[ -n $runner ]]; then
+        timeout 3s systemctl --user kill --kill-whom=all --signal=KILL "$unit" >/dev/null 2>&1 || true
+        if [[ -n $cgroup && -w /sys/fs/cgroup$cgroup/cgroup.kill ]]; then
+            printf '1\n' >"/sys/fs/cgroup$cgroup/cgroup.kill" 2>/dev/null || true
+        fi
+        kill -KILL -- "-$runner" 2>/dev/null || true
+        wait "$runner" 2>/dev/null || true
+    fi
+    rm -rf -- "$ipc"
+}
+interrupted() {
+    local signal=$1 code=$2
+    trap '' INT TERM
+    timeout 3s systemctl --user kill --kill-whom=all "--signal=$signal" "$unit" >/dev/null 2>&1 || true
+    for ((i = 0; i < 50; i++)); do
+        [[ -n $runner ]] && kill -0 "$runner" 2>/dev/null || break
+        sleep .02
+    done
+    exit "$code"
+}
+trap cleanup EXIT
+trap 'interrupted INT 130' INT
+trap 'interrupted TERM 143' TERM
+setsid systemd-run --user --scope --quiet --unit="$unit" \
+    -p "CPUQuota=$cpu%" -p "MemoryHigh=$high" -p "MemoryMax=$max" \
+    -p "MemorySwapMax=$swap" -p "TasksMax=$tasks" \
+    nice -n 10 ionice -c 2 -n 7 "$ROOT/bin/dev-gate" "$ipc" "$$" -- "$@" &
+runner=$!
+deadline=$((SECONDS + 8))
+while [[ ! -f $ipc/pid ]]; do
+    kill -0 "$runner" 2>/dev/null || fail 'Scope or gate failed before verification'
+    ((SECONDS < deadline)) || fail 'Timed out waiting for scope gate'
+    sleep .02
+done
+read -r gate_pid <"$ipc/pid"
+[[ $gate_pid =~ ^[1-9][0-9]*$ ]] && kill -0 "$gate_pid" 2>/dev/null || fail 'Invalid gate PID'
+
+show_unit() {
+    local properties key value
+    properties=$(timeout 2s systemctl --user show "$unit" \
+        -p ActiveState -p ControlGroup -p CPUQuotaPerSecUSec -p MemoryHigh \
+        -p MemoryMax -p MemorySwapMax -p TasksMax) || return 1
+    declare -A props=()
+    while IFS='=' read -r key value; do
+        [[ -n $key && ! ${props[$key]+present} ]] || return 1
+        props[$key]=$value
+    done <<<"$properties"
+    [[ ${props[ActiveState]:-} == active && ${props[ControlGroup]:-} == /*/"$unit" ]] || return 1
+    [[ ${props[ControlGroup]} != *'/../'* && ${props[ControlGroup]} != *'/./'* && ${props[ControlGroup]} != *'//'* ]] || return 1
+    [[ -z $cgroup || $cgroup == "${props[ControlGroup]}" ]] || return 1
+    cgroup=${props[ControlGroup]}
+    [[ ${props[MemoryHigh]:-} == "$high" && ${props[MemoryMax]:-} == "$max" && ${props[MemorySwapMax]:-} == "$swap" && ${props[TasksMax]:-} == "$tasks" ]] || return 1
+    value=${props[CPUQuotaPerSecUSec]:-}
+    if [[ $value =~ ^([0-9]+)(\.([0-9]{1,6}))?(s|ms|us)$ ]]; then
+        local whole=${BASH_REMATCH[1]} fraction=${BASH_REMATCH[3]} suffix=${BASH_REMATCH[4]}
+        fraction=${fraction}000000
+        fraction=${fraction:0:6}
+        value=$((10#$whole * 1000000 + 10#$fraction))
+        case $suffix in ms) value=$((value / 1000)) ;; us) value=$((value / 1000000)) ;; esac
+        ((value == cpu * 10000)) || return 1
+    else
+        return 1
+    fi
+    [[ $(cat "/proc/$gate_pid/cgroup") == "0::$cgroup" ]] && kill -0 "$gate_pid" 2>/dev/null
+}
+show_unit || fail 'Scope properties, state or gate membership do not match'
+
+effective_cpu_quota=0
+effective_cpu_period=1
+effective_high=$high
+effective_max=$max
+effective_swap=$swap
+effective_tasks=$tasks
+path=$cgroup
+# The hierarchy root is exempt from resource limits and has no control files.
+while [[ -n $path ]]; do
+    own=0
+    [[ $path != "$cgroup" ]] || own=1
+    value=$(cat "/sys/fs/cgroup$path/cpu.max") || fail 'Missing cpu.max'
+    read -r quota period extra <<<"$value"
+    profile_number "${period:-}" && ((period > 0 && period <= 1000000)) && [[ -z ${extra:-} ]] || fail 'Invalid CPU period'
+    if [[ $quota == max ]]; then
+        ((own == 0)) || fail 'Unbounded cpu.max'
+    else
+        profile_number "$quota" && ((quota > 0)) || fail 'Invalid CPU quota'
+        ((own == 0 || quota * 100 <= cpu * period)) || fail 'Ineffective CPU ratio'
+        if ((effective_cpu_quota == 0 || quota * effective_cpu_period < effective_cpu_quota * period)); then
+            effective_cpu_quota=$quota
+            effective_cpu_period=$period
+        fi
+    fi
+    for control in memory.high memory.max memory.swap.max pids.max; do
+        value=$(cat "/sys/fs/cgroup$path/$control") || fail "Missing $control"
+        case $control in
+        memory.high)
+            bound=$high
+            effective=effective_high
+            ;;
+        memory.max)
+            bound=$max
+            effective=effective_max
+            ;;
+        memory.swap.max)
+            bound=$swap
+            effective=effective_swap
+            ;;
+        pids.max)
+            bound=$tasks
+            effective=effective_tasks
+            ;;
+        esac
+        if [[ $value == max ]]; then
+            ((own == 0)) || fail "Unbounded $control"
+            continue
+        fi
+        profile_number "$value" || fail "Invalid $control"
+        ((own == 0 || value <= bound)) || fail "Ineffective $control"
+        ((value >= ${!effective})) || printf -v "$effective" '%s' "$value"
+    done
+    path=${path%/*}
+done
+((effective_max > 0 && effective_tasks > 0)) || fail 'Effective ancestor limits cannot sustain a workload'
+[[ $profile != emulator ]] || ((effective_max > 3221225472)) || fail 'Effective emulator cap cannot sustain the 3-GiB guest'
+printf 'dev-run: verified %s cpu.max=%s/%s memory.high=%s memory.max=%s memory.swap.max=%s pids.max=%s (including ancestors)\n' \
+    "$unit" "$effective_cpu_quota" "$effective_cpu_period" "$effective_high" "$effective_max" "$effective_swap" "$effective_tasks" >&2
+show_unit || fail 'Scope disappeared or changed during verification'
+printf '%s\n' "$cgroup" >"$ipc/release.tmp"
+mv -- "$ipc/release.tmp" "$ipc/release"
+if wait "$runner"; then result=0; else result=$?; fi
+exit "$result"
