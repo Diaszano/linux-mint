@@ -85,6 +85,7 @@ SCHEMAS = {
     'package': {'event', 'module', 'package', 'before_installed', 'applied_installed'},
     'artifact': {'event', 'module', 'version', 'name', 'url', 'sha256'},
     'rollback': {'event', 'operation', 'status'},
+'failure': {'event', 'module', 'phase', 'exit_code'},
 }
 
 
@@ -100,6 +101,14 @@ def validate(event):
         if (type(event['operation']) is not int or event['operation'] < 1
                 or event['status'] not in ('intent', 'applied')):
             raise UnsafeState('invalid rollback')
+        return
+    if event['event'] == 'failure':
+        if (not isinstance(event['module'], str)
+                or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', event['module'])
+                or event['phase'] not in ('preflight', 'preview', 'apply', 'verify', 'rollback')
+                or type(event['exit_code']) is not int
+                or not 1 <= event['exit_code'] <= 255):
+            raise UnsafeState('invalid failure')
         return
     if not isinstance(event['module'], str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', event['module']):
         raise UnsafeState('invalid module')

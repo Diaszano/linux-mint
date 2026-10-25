@@ -130,3 +130,12 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - Latest focused VM suite: 28/28 passed. Full unit suite: 183/183 Bats; Python suite: 19/19; integration suite: 18 total, 14 passed and 4 skipped for unavailable Docker/Gradle prerequisites.
 - Bash syntax, warning-level ShellCheck, applicable shfmt, seven legacy hashes, and `git diff --check` passed. `shfmt -d -i 4 bin/dev-profile` retains pre-existing formatting differences; no unrelated reformatting was applied.
 - No legacy files or physical VAIO settings changed. Hardware acceptance and performance measurements remain unperformed. The plan-referenced `tests/acceptance/vaio-checklist.md` is absent and remains a Task 18 documentation limitation. Full evidence: `task-14-report.md`.
+
+## Task 16 status
+- [x] TDD RED/GREEN implementation complete; commit pending at report creation.
+- Setup orchestration is preflight -> selected-module conflict checks -> selected-module preview -> explicit `--yes` -> run journal -> module apply -> per-module verification -> manifest validation and read-only doctor.
+- Added validated metadata-only failure events. Append failure stops later modules, reports run ID/manual rollback preview, and does not automatically remove packages or mutate services. Earlyoom selection fails closed before other modules apply. Low disk (<1 GiB) is checked after journaling and before module apply.
+- Confirmation revalidation checks APT direct-package subsets and exact `Inst` action-line subsets; Docker provider/action/package sets must remain unchanged. A regression injects a new transaction dependency after preview and verifies no sudo/install call occurs.
+- RED evidence: initial disposable-VM setup flow run exposed missing `--yes` apply and low-disk behavior; failure-event test initially failed `invalid event`. Focused final flow + CLI: 24/24 Bats.
+- Final full disposable-VM unit suite: 204/204 Bats; Python: 20/20; integration: 19 total, 15 passed, 4 skipped (Docker unavailable; Gradle unavailable for three tests); final setup rollback integration passed. Bash syntax, warning-level ShellCheck, shfmt, seven legacy hashes and diff check passed.
+- Limitation: Docker and Gradle integration tests skipped for unavailable prerequisites. No physical VAIO settings, installation or tuning were run; no performance claims made.

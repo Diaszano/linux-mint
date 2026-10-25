@@ -35,6 +35,21 @@ class ManifestTests(unittest.TestCase):
     def events(self, run):
         return [json.loads(line) for line in self.journal(run).read_text().splitlines()]
 
+    def test_failure_event_records_only_validated_module_phase_and_exit_code(self):
+        run = self.begin()
+        event = {'event': 'failure', 'module': 'wrappers', 'phase': 'verify', 'exit_code': 1}
+        result = self.cli('append', run, json.dumps(event))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.events(run)[-1], event)
+        for invalid in (
+            dict(event, module='../wrappers'),
+            dict(event, phase='secret'),
+            dict(event, exit_code=True),
+            dict(event, exit_code=256),
+        ):
+            result = self.cli('append', run, json.dumps(invalid))
+            self.assertNotEqual(result.returncode, 0)
+
     def test_private_run_modes_do_not_depend_on_callers_umask(self):
         result = subprocess.run(['python3', str(HELPER), 'init'], env=self.env,
                                 text=True, capture_output=True, umask=0o777)
