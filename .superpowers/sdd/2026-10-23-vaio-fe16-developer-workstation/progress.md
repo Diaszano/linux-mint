@@ -147,4 +147,4 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - Full guarded disposable KVM VM integration: 19 tests, 14 pass, five skip (Docker absent, three Gradle unavailable, setup-wrapper test passed); cgroup membership and memory/swap pressure checks passed. No Android SDK/AVD run and no physical acceptance.
 - Full-tree ShellCheck exits 1 with 39 existing diagnostics in untouched scripts/modules. Default full-tree `shfmt -d` exits 1 with about 5,130 diff output lines from existing mixed indentation. These gates are recorded as unresolved; no unrelated reformatting or warning suppression was applied.
 - Safety: no physical VAIO setup/tuning; no Docker or Gradle installation opt-ins; wrapper install/rollback integration uses temporary user state only.
-- Evidence: `task-17-report.md`. Task review and commit remain pending.
+- Commit: `3ef8e5a` (`docs: document safe workstation setup and VM validation`). Task review remains pending; Step 4's full-tree static gate is not green due untouched existing ShellCheck/shfmt findings.
