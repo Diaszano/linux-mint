@@ -156,6 +156,46 @@ EOF
   [ ! -e "$MISE_EXEC_LOG" ]
 }
 
+@test "successful distro minisign install precedes release verification" {
+  touch "$HOME/.bashrc"
+  MISE_MINISIGN_FIXTURE="$BATS_TEST_TMPDIR/minisign.fixture"
+  mv "$MISE_TEST_BIN/minisign" "$MISE_MINISIGN_FIXTURE"
+  MISE_TEST_NOMINISIGN_BIN="$BATS_TEST_TMPDIR/no-minisign-bin"
+  mkdir -p "$MISE_TEST_NOMINISIGN_BIN"
+  for tool in dirname python3 id stat realpath mktemp chmod sha256sum grep sed rm cp mkdir; do
+    ln -s "$(command -v "$tool")" "$MISE_TEST_NOMINISIGN_BIN/$tool"
+  done
+  ln -s "$MISE_TEST_BIN/curl" "$MISE_TEST_NOMINISIGN_BIN/curl"
+  export MISE_MINISIGN_FIXTURE
+  run /usr/bin/bash -c '
+    root=$1; path=$2; bin=$3
+    export PATH=$path
+    source "$root/lib/backup.sh"
+    source "$root/lib/mise.sh"
+    apt_plan() {
+      [[ $1 == mise && $2 == minisign ]] || return 1
+      APT_PLAN_TOKEN=test-plan-token
+      printf "apt-plan %s %s\\n" "$1" "$2" >>"$MISE_TEST_LOG"
+    }
+    apt_apply() {
+      [[ $# == 5 && $2 == mise && $3 == --confirmed && $4 == test-plan-token && $5 == minisign ]] || return 1
+      printf "apt-apply %s %s\\n" "$2" "$5" >>"$MISE_TEST_LOG"
+      cp "$MISE_MINISIGN_FIXTURE" "$bin/minisign"
+      chmod 755 "$bin/minisign"
+    }
+    run_id=$(begin_run)
+    mise_apply "$run_id"
+  ' _ "$ROOT" "$MISE_TEST_NOMINISIGN_BIN" "$MISE_TEST_NOMINISIGN_BIN"
+  [ "$status" -eq 0 ]
+  [ -x "$HOME/.local/bin/mise" ]
+  [ "$(cat "$MISE_EXEC_LOG")" = --version ]
+  [ "$(sed -n '1p' "$MISE_TEST_LOG")" = 'apt-plan mise minisign' ]
+  [ "$(sed -n '2p' "$MISE_TEST_LOG")" = 'apt-apply mise minisign' ]
+  [[ "$(sed -n '3p' "$MISE_TEST_LOG")" == https://github.com/jdx/mise/releases/download/*/SHASUMS256.txt ]]
+  [[ "$(sed -n '6p' "$MISE_TEST_LOG")" == '-Vm '* ]]
+  [ "$(grep -c '^https://' "$MISE_TEST_LOG")" -eq 3 ]
+}
+
 @test "changed artifact bytes fail hash verification before installation" {
   touch "$HOME/.bashrc"
   cat >"$MISE_TEST_BIN/curl" <<'EOF'
