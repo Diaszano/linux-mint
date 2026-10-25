@@ -139,3 +139,12 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - RED evidence: initial disposable-VM setup flow run exposed missing `--yes` apply and low-disk behavior; failure-event test initially failed `invalid event`. Focused final flow + CLI: 24/24 Bats.
 - Final full disposable-VM unit suite: 204/204 Bats; Python: 20/20; integration: 19 total, 15 passed, 4 skipped (Docker unavailable; Gradle unavailable for three tests); final setup rollback integration passed. Bash syntax, warning-level ShellCheck, shfmt, seven legacy hashes and diff check passed.
 - Limitation: Docker and Gradle integration tests skipped for unavailable prerequisites. No physical VAIO settings, installation or tuning were run; no performance claims made.
+
+## Task 17 status
+- Implemented v2 README, usage, performance, troubleshooting, test safety, docs contract tests, and a guarded disposable-VM integration runner.
+- TDD RED: initial docs suite failed on missing docs/runner. The additional setup-test handoff regression failed before the runner exported `VAIO_SETUP_TEST_VM=1`; it passed after adding the export behind the `VAIO_TEST_VM=1` and `systemd-detect-virt --vm` guards.
+- Final unit suite: 213/213 Bats; Python manifest tests: 20/20; `bash -n`: exit 0; yamllint: exit 0; legacy checksum fixture: all seven files OK. New runner passes ShellCheck and `shfmt -i 4 -d`.
+- Full guarded disposable KVM VM integration: 19 tests, 14 pass, five skip (Docker absent, three Gradle unavailable, setup-wrapper test passed); cgroup membership and memory/swap pressure checks passed. No Android SDK/AVD run and no physical acceptance.
+- Full-tree ShellCheck exits 1 with 39 existing diagnostics in untouched scripts/modules. Default full-tree `shfmt -d` exits 1 with about 5,130 diff output lines from existing mixed indentation. These gates are recorded as unresolved; no unrelated reformatting or warning suppression was applied.
+- Safety: no physical VAIO setup/tuning; no Docker or Gradle installation opt-ins; wrapper install/rollback integration uses temporary user state only.
+- Evidence: `task-17-report.md`. Task review and commit remain pending.
