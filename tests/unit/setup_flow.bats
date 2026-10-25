@@ -120,6 +120,11 @@ case "$*" in
   *) exit 0 ;;
 esac
 EOF
+  cat >"$BATS_TEST_TMPDIR/bin/docker" <<'EOF'
+#!/bin/sh
+printf 'docker %s\n' "$*" >>"$PROBE_LOG"
+exit 1
+EOF
   cat >"$BATS_TEST_TMPDIR/bin/apt-get" <<'EOF'
 #!/bin/sh
 printf 'apt-get %s\n' "$*" >>"$PROBE_LOG"
@@ -366,6 +371,7 @@ PY
   run bash "$ROOT/setup.sh" --only baseline --docker --yes
   [ "$status" -ne 0 ]
   [[ "$output" == *'manual'* ]]
+  grep -q '^docker info ' "$PROBE_LOG"
   [ ! -e "$XDG_STATE_HOME/vaio-fe16-dev-setup" ]
   ! grep -Eq 'apt-get .*--yes|sudo |systemctl .* (enable|start|restart|mask)' "$PROBE_LOG"
 }
