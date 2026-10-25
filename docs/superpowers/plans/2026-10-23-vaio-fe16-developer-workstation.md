@@ -252,14 +252,14 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 ### Task 15: Idempotent user wrapper installation
 
-**Files:** Create lib/install-wrappers.sh and tests/unit/install_wrappers.bats; extend lib/backup.sh and lib/rollback.sh.
+**Files:** Create `lib/install-wrappers.sh` and `tests/unit/install_wrappers.bats`; reuse `lib/backup.sh` and `lib/rollback.sh` ownership primitives.
 
-**Interfaces:** install_wrappers RUN_ID copies only the owned bin commands to HOME/.local/bin, skipping identical files, snapshotting an existing target and recording its checksum. Rollback removes or restores only an unchanged owned wrapper.
+**Interfaces:** `install_wrappers RUN_ID` installs launchers for owned `bin/` commands into `$HOME/.local/bin`, skips identical files, snapshots prior targets, and journals checksums. Rollback removes/restores only unchanged owned launchers. Generated launchers embed the checkout absolute root safely and forward `"$@"`; copying scripts literally would derive ROOT from `~/.local/bin` and break library/config lookup. Internal `dev-gate` is excluded.
 
-- [ ] **Step 1: Write failing tests.** Assert install creates executable commands and a user-bin PATH hook once; second install is a no-op; an existing foreign executable or later user-modified wrapper is not silently overwritten; interrupted copy retains old or complete new content and rollback metadata.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/install_wrappers.bats. Expected: FAIL for absent installer.
+- [x] **Step 1: Write failing tests.** Covered executable launchers, PATH hook once, argv boundaries, second-install no-op, foreign target restoration, edited-owned-target refusal, and interrupted atomic replacement with recoverable journal.
+- [x] **Step 2: Run tests red.** Ran `bats tests/unit/install_wrappers.bats` in the disposable VM before implementation; all five initial tests failed because the installer was absent.
 - [ ] **Step 3: Implement journaled user-bin installation.** Reuse owned-file primitives, compare checksums before replacing, and preserve an existing PATH entry and shell content outside a delimited owned block.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/install_wrappers.bats && bash -n lib/install-wrappers.sh. Expected: PASS; duplicate-run test shows one PATH block and no content change.
+- [x] **Step 4: Verify green.** Ran `bash -n lib/install-wrappers.sh` and `bats --print-output-on-failure tests/unit/install_wrappers.bats` in the disposable VM; all six focused tests passed, including argv boundaries and interrupted replacement recovery.
 - [ ] **Step 5: Commit.** git add lib/install-wrappers.sh lib/backup.sh lib/rollback.sh tests/unit/install_wrappers.bats; git commit -m "feat: install workstation commands idempotently"
 
 ### Task 16: Connect setup modules without weakening the safety order
