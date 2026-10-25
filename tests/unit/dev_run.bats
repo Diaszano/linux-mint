@@ -2,7 +2,9 @@
 setup() {
     ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
     chmod 700 "$BATS_TEST_TMPDIR" "$(dirname "$BATS_TEST_TMPDIR")"
-    export HOME="$BATS_TEST_TMPDIR/home" XDG_RUNTIME_DIR="$BATS_TEST_TMPDIR/runtime"
+    export HOME="$BATS_TEST_TMPDIR/home"
+    export XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_RUNTIME_DIR="$BATS_TEST_TMPDIR/runtime"
     export FIXTURE="$BATS_TEST_TMPDIR" PATH="$BATS_TEST_TMPDIR/bin:$PATH"
     mkdir -p "$HOME" "$XDG_RUNTIME_DIR" "$FIXTURE/bin"
     chmod 700 "$XDG_RUNTIME_DIR"
