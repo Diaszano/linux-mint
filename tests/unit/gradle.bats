@@ -81,6 +81,16 @@ teardown() { rm -rf -- "$GRADLE_TEST_ROOT"; }
   [ "$before" = "$(sha256sum "$GRADLE_USER_HOME/gradle.properties")" ]
 }
 
+@test "empty continuation cannot turn a marker into a block boundary" {
+  printf '\\\n%s\norg.gradle.workers.max=2\n%s\n' \
+    "$_GRADLE_BEGIN" "$_GRADLE_END" >"$GRADLE_USER_HOME/gradle.properties"
+  before=$(sha256sum "$GRADLE_USER_HOME/gradle.properties")
+  run gradle_plan --global
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'conflitante'* ]]
+  [ "$before" = "$(sha256sum "$GRADLE_USER_HOME/gradle.properties")" ]
+}
+
 @test "group-writable user-home ancestors refuse preview and apply" {
   mkdir -p "$GRADLE_TEST_ROOT/unsafe-parent/gradle-home"
   chmod 777 "$GRADLE_TEST_ROOT/unsafe-parent"

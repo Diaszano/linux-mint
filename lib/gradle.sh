@@ -77,10 +77,10 @@ _gradle_state() {
 
 _gradle_conflicts() {
   [[ $_GRADLE_BEFORE != missing ]] || return 0
-  local starts=0 ends=0 in_block=0 line logical='' trailing existing expected
+  local starts=0 ends=0 in_block=0 line logical='' trailing continuing=0 existing expected
   local pattern='^[[:space:]]*org(\\)?[.]gradle(\\)?[.](jvmargs|workers(\\)?[.]max|caching|daemon(\\)?[.]idletimeout)[[:space:]]*([=:]|[[:space:]])'
   while IFS= read -r line || [[ -n $line ]]; do
-    if [[ -z $logical && $line == "$_GRADLE_BEGIN" ]]; then
+    if ((continuing == 0)) && [[ $line == "$_GRADLE_BEGIN" ]]; then
       starts=$((starts + 1))
       ((starts == 1)) || {
         _gradle_fail 'marcadores Gradle duplicados.'
@@ -89,7 +89,7 @@ _gradle_conflicts() {
       in_block=1
       continue
     fi
-    if [[ -z $logical && $line == "$_GRADLE_END" ]]; then
+    if ((continuing == 0)) && [[ $line == "$_GRADLE_END" ]]; then
       ends=$((ends + 1))
       ((ends == 1 && in_block == 1)) || {
         _gradle_fail 'bloco Gradle malformado.'
@@ -99,7 +99,7 @@ _gradle_conflicts() {
       continue
     fi
     ((in_block == 0)) || continue
-    if [[ -n $logical ]]; then
+    if ((continuing)); then
       line=${line#"${line%%[![:space:]]*}"}
       logical+=$line
     else
@@ -109,9 +109,11 @@ _gradle_conflicts() {
       trailing=${BASH_REMATCH[1]}
       if ((${#trailing} % 2 == 1)); then
         logical=${logical%\\}
+        continuing=1
         continue
       fi
     fi
+    continuing=0
     if [[ $logical =~ $pattern ]]; then
       _gradle_fail 'propriedade Gradle conflitante fora do bloco gerenciado.'
       return 1
