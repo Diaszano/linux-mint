@@ -106,7 +106,7 @@ PY
     [[ "$output" == *'memory.high=536870912 memory.max=1073741824 memory.swap.max=0 pids.max=128'* ]]
     export XDG_CONFIG_HOME="$WORK/config"
     mkdir -p "$XDG_CONFIG_HOME/vaio-dev"
-    printf 'emulator\t200\t9\t10\t0\t128\n' >"$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
+    printf 'build\t800\t7\t9\t2\t1024\nemulator\t200\t9\t10\t0\t128\nheavy\t600\t6\t8\t2\t768\n' >"$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
     chmod 600 "$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
     run "$ROOT/bin/dev-run" emulator touch "$WORK/sentinel"
     [ "$status" != 0 ]

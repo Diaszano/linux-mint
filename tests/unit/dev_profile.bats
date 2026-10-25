@@ -51,12 +51,27 @@ SH
   printf 'build\t800\t7\t9\t2\t1024\n' >"$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
   chmod 600 "$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
   run "$ROOT/bin/dev-profile" show
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Malformed, incomplete, or empty workload table"* ]]
   printf 'build\t800\t7\t9\t2\t1024; touch %s/pwned\n' "$FIXTURE" >"$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
   run "$ROOT/bin/dev-profile" show
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Malformed or empty workload table"* ]]
+  [[ "$output" == *"Malformed, incomplete, or empty workload table"* ]]
   [ ! -e "$FIXTURE/pwned" ]
+}
+
+@test "incomplete user table refuses selection without changing prior choice" {
+  mkdir -p "$XDG_CONFIG_HOME/vaio-dev"
+  chmod 700 "$XDG_CONFIG_HOME/vaio-dev"
+  printf 'balanced\n' >"$XDG_CONFIG_HOME/vaio-dev/profile"
+  chmod 600 "$XDG_CONFIG_HOME/vaio-dev/profile"
+  printf 'build\t800\t7\t9\t2\t1024\n' >"$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
+  chmod 600 "$XDG_CONFIG_HOME/vaio-dev/profiles.conf"
+  before=$(sha256sum "$XDG_CONFIG_HOME/vaio-dev/profile")
+  run "$ROOT/bin/dev-profile" select balanced
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Malformed, incomplete, or empty workload table"* ]]
+  [ "$(sha256sum "$XDG_CONFIG_HOME/vaio-dev/profile")" = "$before" ]
 }
 
 @test "failed atomic replacement preserves the prior choice" {

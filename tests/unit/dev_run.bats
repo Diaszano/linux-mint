@@ -167,7 +167,7 @@ SH
 
 @test "valid private user rows apply only to the next workload" {
     mkdir -p "$HOME/.config/vaio-dev"
-    printf 'build\t200\t2\t3\t0\t128\n' >"$HOME/.config/vaio-dev/profiles.conf"
+    printf 'build\t200\t2\t3\t0\t128\nemulator\t400\t5\t6\t1\t512\nheavy\t600\t6\t8\t2\t768\n' >"$HOME/.config/vaio-dev/profiles.conf"
     chmod 600 "$HOME/.config/vaio-dev/profiles.conf"
     run "$ROOT/bin/dev-run" build true
     [ "$status" = 0 ]

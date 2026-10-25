@@ -125,7 +125,8 @@ Verification: disposable VM official release signature/hash/install/login-shell 
 - No physical notebook installation, tuning, or acceptance testing was performed. Hardware-dependent KVM, SDK/AVD, Gradle, and performance behavior remain unverified.
 
 ## Task 14 status
-- Implementation and focused tests are committed as `feat: validate selectable workload profiles`; independent review is pending. Task 14 exposes only the balanced preset and preserves build/emulator/heavy as the workload argument. The shared parser lives in `lib/profiles.sh`; this clarifies the approved plan file map.
-- TDD RED: new CLI tests failed while `bin/dev-profile` was absent; rejection assertions verify specific diagnostics. Focused disposable VM tests passed 26/26.
-- Full sequential disposable VM verification passed: 181 Bats unit tests, 19 Python manifest tests, and 18 integration tests (14 pass, 4 environment skips). Bash syntax and warning-level ShellCheck passed; host `git diff --check` passed. All seven legacy fixture hashes passed.
-- No legacy files or physical VAIO settings changed. No hardware acceptance or performance claim. Full evidence: `task-14-report.md`.
+- Base implementation committed `feat: validate selectable workload profiles`; independent review found incomplete user tables were accepted. Fix is pending commit and independent re-review.
+- Shared parser in `lib/profiles.sh` now requires `build`, `emulator`, and `heavy` rows; profile CLI gives a specific incomplete-table diagnostic. Regression verifies a mode-0600 build-only table is rejected and the prior profile selection remains unchanged. Existing shell-code and bounds validation remain.
+- TDD RED: in a disposable Noble VM, build-only table incorrectly passed `show` and `select balanced`, overwriting the prior selection. Focused Bats passed 27/27.
+- Full sequential disposable VM verification: 182 Bats unit tests, 19 Python tests, and 18 integration tests (15 pass, 3 environment skips). Bash syntax, warning-level ShellCheck, applicable shfmt, and all seven legacy hashes passed. `shfmt -d -i 4 bin/dev-profile` reports pre-existing formatting differences; no unrelated broad formatting was applied.
+- No legacy files or physical VAIO settings changed. No hardware acceptance or performance claim. The plan-referenced `tests/acceptance/vaio-checklist.md` is absent; track as a Task 18/acceptance limitation if needed. Full evidence: `task-14-report.md`.

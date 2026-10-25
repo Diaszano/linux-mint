@@ -17,7 +17,7 @@ profile_load_table() {
         PROFILE_ROWS+=("$row")
         found=1
     done <"$file"
-    ((found))
+    ((found)) && [[ ${seen[build]:-0} == 1 && ${seen[emulator]:-0} == 1 && ${seen[heavy]:-0} == 1 ]]
 }
 
 profile_choice_read() {

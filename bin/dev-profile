@@ -12,7 +12,7 @@ shift
 [[ $action == show && $# == 0 || $action == select && $# == 1 && $1 == balanced ]] || fail 'Unknown command or profile.'
 
 table=$(profile_table_path "$ROOT") || fail 'Unsafe or invalid user workload table.'
-profile_load_table "$table" || fail 'Malformed or empty workload table.'
+profile_load_table "$table" || fail 'Malformed, incomplete, or empty workload table.'
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 [[ $config_home == /* ]] || fail 'XDG_CONFIG_HOME must be an absolute path.'
 choice_path=$config_home/vaio-dev/profile
