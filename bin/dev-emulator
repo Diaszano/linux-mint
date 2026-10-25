@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=lib/virtualization.sh
+source "$SCRIPT_DIR/../lib/virtualization.sh"
+
+dev_emulator_fail() {
+    printf 'dev-emulator: %s\n' "$*" >&2
+    return 1
+}
+
+dev_emulator_main() {
+    local sdk emulator avd_home avd_list avd_name avd_ini avd_path config image_sysdir
+    local gpu=auto gpu_selected=0 arg
+    local -a extra_args=()
+    sdk=$(_virtualization_sdk) || {
+        dev_emulator_fail 'Android SDK not found; set ANDROID_SDK_ROOT.'
+        return 1
+    }
+    emulator=$sdk/emulator/emulator
+    [[ -x $emulator ]] || {
+        dev_emulator_fail "Android Emulator is missing under $sdk/emulator."
+        return 1
+    }
+
+    if [[ ${1:-} == --list ]]; then
+        (($# == 1)) || {
+            dev_emulator_fail '--list does not accept launch arguments.'
+            return 1
+        }
+        "$emulator" -list-avds
+        return
+    fi
+
+    (($# >= 1)) || {
+        dev_emulator_fail 'Usage: dev-emulator --list | NAME [EMULATOR_ARGS...]'
+        return 1
+    }
+    avd_name=$1
+    shift
+    [[ $avd_name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+        dev_emulator_fail 'Invalid AVD name.'
+        return 1
+    }
+
+    avd_home=${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}
+    [[ -d $avd_home ]] || {
+        dev_emulator_fail "AVD directory not found: $avd_home"
+        return 1
+    }
+    avd_list=$("$emulator" -list-avds 2>/dev/null) || {
+        dev_emulator_fail 'Unable to list Android Virtual Devices.'
+        return 1
+    }
+    grep -Fxq -- "$avd_name" <<<"$avd_list" || {
+        dev_emulator_fail "AVD not found: $avd_name"
+        return 1
+    }
+    avd_ini=$avd_home/$avd_name.ini
+    [[ -f $avd_ini && ! -L $avd_ini ]] || {
+        dev_emulator_fail "AVD metadata is missing: $avd_ini"
+        return 1
+    }
+    avd_path=$(sed -n 's/^[[:space:]]*path[[:space:]]*=[[:space:]]*//p' "$avd_ini" | head -n 1)
+    [[ -n $avd_path ]] || {
+        dev_emulator_fail 'AVD metadata has no path.'
+        return 1
+    }
+    [[ $avd_path == /* ]] || avd_path=$avd_home/$avd_path
+    avd_path=$(realpath -e -- "$avd_path") || {
+        dev_emulator_fail 'AVD path does not exist.'
+        return 1
+    }
+    config=$avd_path/config.ini
+    [[ -f $config && ! -L $config ]] || {
+        dev_emulator_fail 'AVD config.ini is missing or unsafe.'
+        return 1
+    }
+    image_sysdir=$(awk -F= '/^[[:space:]]*image[.]sysdir[.]1[[:space:]]*=/ {sub(/^[^=]*=/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit}' "$config")
+    _virtualization_x86_image "$sdk" "$image_sysdir" || {
+        dev_emulator_fail 'AVD must use an installed x86_64 system image under this SDK.'
+        return 1
+    }
+
+    while (($#)); do
+        arg=$1
+        shift
+        case $arg in
+        -gpu)
+            (($# > 0)) || {
+                dev_emulator_fail 'Missing value for -gpu.'
+                return 1
+            }
+            gpu=$1
+            shift
+            case $gpu in auto | swiftshader) ;; *)
+                dev_emulator_fail "Unsupported GPU mode: $gpu"
+                return 1
+                ;;
+            esac
+            ((gpu_selected == 0)) || {
+                dev_emulator_fail 'Specify -gpu only once.'
+                return 1
+            }
+            gpu_selected=1
+            ;;
+        -gpu=*)
+            gpu=${arg#*=}
+            case $gpu in auto | swiftshader) ;; *)
+                dev_emulator_fail "Unsupported GPU mode: $gpu"
+                return 1
+                ;;
+            esac
+            ((gpu_selected == 0)) || {
+                dev_emulator_fail 'Specify -gpu only once.'
+                return 1
+            }
+            gpu_selected=1
+            ;;
+        -accel* | -no-accel* | -memory | -memory=* | -cores | -cores=* | -avd | -avd=* | -no-boot-anim | -qemu* | @*)
+            dev_emulator_fail "Argument conflicts with required emulator settings: $arg"
+            return 1
+            ;;
+        *) extra_args+=("$arg") ;;
+        esac
+    done
+
+    virtualization_require_kvm "$sdk" || return 1
+    exec "$SCRIPT_DIR/dev-run" emulator "$emulator" \
+        -avd "$avd_name" -accel on -memory 3072 -cores 4 -gpu "$gpu" -no-boot-anim "${extra_args[@]}"
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    dev_emulator_main "$@"
+fi
