@@ -49,4 +49,3 @@ teardown() {
     [[ "$json" == *'500000000 536870912 128 127.0.0.1'* ]]
     sudo docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} memory={{.MemUsage}} pids={{.PIDs}}' "${project}-db-1" "${project}-cache-1"
 }
-
