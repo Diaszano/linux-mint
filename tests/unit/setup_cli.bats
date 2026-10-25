@@ -120,6 +120,7 @@ run bash "$ROOT/setup.sh" --dry-run --earlyoom --gradle-global --skip-mise --ski
   [[ "$output" == *'earlyoom unavailable'* ]]
   [[ "$output" != *'packages=earlyoom'* && "$output" != *'command=sudo apt-get install earlyoom'* ]]
   [[ "$output" == *'module=gradle-global'* ]]
+[[ "$output" == *'org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m'* ]]
   [[ "$output" != *'module=mise'* ]]
   [[ "$output" != *'module=kvm'* ]]
   run bash "$ROOT/setup.sh" --dry-run --no-docker --no-earlyoom

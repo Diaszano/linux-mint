@@ -184,11 +184,11 @@ Stable shell interfaces: preflight_host and preflight_conflicts print key=value 
 
 **Interfaces:** gradle_plan prints per-project or per-invocation recommendations without writing a project. gradle_global_apply RUN_ID resolves GRADLE_USER_HOME or HOME/.gradle, reports existing same-key conflicts, and writes one delimited managed block only after --gradle-global plus separate preview/consent. Suggested opt-in values are -Xmx3g, MaxMetaspaceSize=768m, workers.max=4, caching=true and daemon.idletimeout=900000; parallel and configuration cache stay project-specific.
 
-- [ ] **Step 1: Write failing tests.** Assert default and --yes alone never write Gradle files; a nondefault GRADLE_USER_HOME is honored; existing unrelated properties and permissions survive; same-key conflicts outside the block refuse to shadow; identical second run is a no-op; later user edit blocks rollback; project files are never edited.
-- [ ] **Step 2: Run tests red.** Run: bats tests/unit/gradle.bats. Expected: FAIL for missing module.
-- [ ] **Step 3: Implement guidance and optional managed block.** Use backup/atomic-write primitives, preserve existing content exactly outside markers, and omit global parallel/configuration-cache settings. Document Gradle property precedence and that 3 GiB JVM heap is not the total build memory.
-- [ ] **Step 4: Verify green.** Run: bats tests/unit/gradle.bats && bash -n lib/gradle.sh. Expected: PASS; default test shows zero Gradle writes and opt-in test shows exactly one managed block.
-- [ ] **Step 5: Commit.** git add lib/gradle.sh lib/rollback.sh setup.sh tests/unit/gradle.bats docs/GRADLE.md; git commit -m "feat: provide opt-in Gradle settings without global defaults"
+- [x] **Step 1: Write failing tests.** Assert default and --yes alone never write Gradle files; a nondefault GRADLE_USER_HOME is honored; existing unrelated properties and permissions survive; same-key conflicts outside the block refuse to shadow; identical second run is a no-op; later user edit blocks rollback; project files are never edited.
+- [x] **Step 2: Run tests red.** Run: bats tests/unit/gradle.bats. Expected: FAIL for missing module.
+- [x] **Step 3: Implement guidance and optional managed block.** Use backup/atomic-write primitives, preserve existing content exactly outside markers, and omit global parallel/configuration-cache settings. Document Gradle property precedence and that 3 GiB JVM heap is not the total build memory.
+- [x] **Step 4: Verify green.** Run: bats tests/unit/gradle.bats && bash -n lib/gradle.sh. Expected: PASS; default test shows zero Gradle writes and opt-in test shows exactly one managed block.
+- [x] **Step 5: Commit.** git add lib/gradle.sh lib/rollback.sh setup.sh tests/unit/gradle.bats docs/GRADLE.md; git commit -m "feat: provide opt-in Gradle settings without global defaults"
 
 ### Task 10: Scoped build command and Gradle daemon boundary
 
