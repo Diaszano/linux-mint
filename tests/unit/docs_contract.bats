@@ -95,3 +95,11 @@ EOF
     run env VAIO_TEST_VM=1 PATH="$BATS_TEST_TMPDIR/bin:$PATH" "$ROOT/tests/integration/run-vm.sh"
     [ "$status" -eq 0 ]
 }
+
+@test "README labels full-tree ShellCheck baseline as non-green" {
+local docs="$ROOT/tests/README.md"
+grep -Fq 'shellcheck -x -S warning setup.sh tests/integration/run-vm.sh' "$docs"
+grep -Fq 'full-tree ShellCheck gate is currently **non-green**' "$docs"
+grep -Fq 'exits 1 with 39 existing diagnostic locations' "$docs"
+grep -Fq 'task-17-report.md' "$docs"
+}
